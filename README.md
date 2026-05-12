@@ -57,13 +57,9 @@ npm install logsguardian
 
 ## Authors
 
-- **Sebastian Huertas** — Cybersecurity implementation, ML pattern design, testing and core logic
-- **Diego Valenzuela** — Development and integration
-
+- **Sebastian Huertas** — Cybersecurity integration, dataset verification, library architecture and structure, testing and core logic
+- **Diego Valenzuela** — AI/ML model integration, library architecture and structure,  pattern design for the ML model, testing and core logic
+  
 Universidad del Valle de Guatemala — 2026
 
 ---
-
-## License
-
-TBD
