@@ -1,2 +1,7 @@
 data/
 .claude/
+node_modules
+dist/
+coverage/
+*.tsbuildinfo
+*.log
