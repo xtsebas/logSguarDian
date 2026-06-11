@@ -1,0 +1,15 @@
+{
+  "name": "logsguardian",
+  "private": true,
+  "version": "0.0.0",
+  "description": "logSguarDian — RASP middleware con deteccion de amenazas para Node.js/Express",
+  "license": "MIT",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "build": "pnpm -r run build",
+    "test": "pnpm -r run test",
+    "lint": "pnpm -r run lint"
+  }
+}
