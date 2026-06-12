@@ -49,7 +49,14 @@ def levenshtein(a: str, b: str) -> int:
 
 
 def fingerprint(record: dict) -> str:
-    key = (record.get("query") or "") + "|" + (record.get("label") or "")
+    # Include path, query, and body so attacks carried in path or body
+    # (e.g. owasp path-traversal with query="") are not collapsed into one record.
+    key = (
+        (record.get("path") or "") + "|"
+        + (record.get("query") or "") + "|"
+        + (record.get("body") or "") + "|"
+        + (record.get("label") or "")
+    )
     return hashlib.sha256(key.encode("utf-8")).hexdigest()
 
 
@@ -168,6 +175,7 @@ def main(dry_run: bool = False) -> None:
         with open(OUTPUT, "w", encoding="utf-8") as fout:
             for source, rec in deduped:
                 rec["_source"] = source
+                rec["_row_hash"] = fingerprint(rec)
                 fout.write(json.dumps(rec, ensure_ascii=False) + "\n")
         print(f"  Written: {len(deduped):,} rows")
 

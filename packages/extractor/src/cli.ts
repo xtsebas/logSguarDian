@@ -20,6 +20,8 @@ interface DatasetRecord extends Partial<CanonicalRequest> {
   sample_id?: string | number;
   label?: string | number;
   timestamp?: string;
+  _source?: string;
+  _row_hash?: string;
 }
 
 const FLUSH_EVERY = 1000;
@@ -45,7 +47,7 @@ async function main(): Promise<void> {
   });
 
   const fd = fs.openSync(outputPath, "w");
-  const header = ["sample_id", "label", "timestamp", ...FEATURE_NAMES];
+  const header = ["sample_id", "label", "timestamp", "_source", "_row_hash", ...FEATURE_NAMES];
   fs.writeSync(fd, header.map(csvEscape).join(",") + "\n");
 
   let buffer = "";
@@ -81,6 +83,8 @@ async function main(): Promise<void> {
       record.sample_id ?? "",
       record.label ?? "",
       record.timestamp ?? "",
+      record._source ?? "",
+      record._row_hash ?? "",
       ...FEATURE_NAMES.map((name) => features[name]),
     ];
     buffer += row.map(csvEscape).join(",") + "\n";

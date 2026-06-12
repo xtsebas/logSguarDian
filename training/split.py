@@ -44,8 +44,16 @@ SOURCE_TOL = 0.05  # ±5% on source distribution
 
 
 def row_hash(row: pd.Series) -> str:
-    """SHA256 of query + label fields to detect cross-partition leakage."""
-    key = str(row.get("query", "")) + "|" + str(row.get("label", ""))
+    """Return the pre-computed _row_hash from unify.py if present,
+    otherwise fall back to hashing path+query+body+label."""
+    if "_row_hash" in row.index and row["_row_hash"]:
+        return str(row["_row_hash"])
+    key = (
+        str(row.get("path", "")) + "|"
+        + str(row.get("query", "")) + "|"
+        + str(row.get("body", "") or "") + "|"
+        + str(row.get("label", ""))
+    )
     return hashlib.sha256(key.encode("utf-8")).hexdigest()
 
 
@@ -187,7 +195,7 @@ def run(input_path: Path, dry_run: bool = False) -> None:
     df = pd.read_parquet(input_path)
     print(f"  Loaded {len(df):,} rows, {len(df.columns)} columns")
 
-    required = {"label", "query"}
+    required = {"label"}
     missing = required - set(df.columns)
     if missing:
         print(f"ERROR: missing required columns: {missing}")
