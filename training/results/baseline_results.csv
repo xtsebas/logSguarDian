@@ -1,0 +1,3 @@
+Model,Macro F1 (val)
+Logistic Regression,0.7288636381256656
+Decision Tree (max_depth=10),0.8468566195774736
