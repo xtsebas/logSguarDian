@@ -1,7 +1,30 @@
+# data
 data/
+
+# Claude
 .claude/
-node_modules
+
+# Node
+node_modules/
 dist/
 coverage/
 *.tsbuildinfo
 *.log
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+*.egg-info/
+
+# Jupyter
+.ipynb_checkpoints/
+
+# OS
+.DS_Store
+
+# Environment
+.env
+.env.*
