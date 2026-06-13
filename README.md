@@ -2,7 +2,7 @@
 
 > ML-powered endpoint attack detection for Node.js services — no security team required.
 
-**Status: Work in Progress**
+**Status: Work in Progress/develop**
 
 ---
 
