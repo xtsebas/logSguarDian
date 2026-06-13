@@ -29,6 +29,9 @@ venv/
 .env
 .env.*
 
+# VS Code
+.vscode/
+
 # Large training data (regenerate from parsers + extractor CLI)
 training/data_clean/*.jsonl
 training/data_clean/*.csv
@@ -38,3 +41,7 @@ training/splits/*.parquet
 
 # Sklearn model binaries (use ONNX exports instead)
 training/models/*.pkl
+
+# packages/core bundles ONNX models from training/models/ at build/publish time;
+# avoid duplicating the binaries in git (training/models/ is the source of truth)
+packages/core/models/*.onnx

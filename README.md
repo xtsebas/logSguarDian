@@ -10,7 +10,7 @@
 
 logsGuarDian is an npm library designed to monitor server logs in Node.js applications and automatically detect anomalous patterns that may indicate active attacks on your endpoints.
 
-It uses Machine Learning to identify and classify common attack types such as SQL Injection, XSS, and DDoS attempts — giving startups and small tech companies a layer of automated security without needing a dedicated cybersecurity department.
+It uses Machine Learning to identify and classify common attack types such as SQL Injection, Cross-Site Scripting (XSS), Path Traversal / Local File Inclusion, and Command Injection — giving startups and small tech companies a layer of automated security without needing a dedicated cybersecurity department.
 
 The library learns from the traffic patterns of the system it is installed on, becoming more accurate over time to the specific behavior of your application.
 
@@ -32,10 +32,17 @@ logsGuarDian addresses this gap by providing:
 ## Planned Features
 
 - Real-time log monitoring middleware for Express/Node.js
-- ML-based classification of attack types (SQL Injection, XSS, DDoS, and more)
+- ML-based classification of attack types (SQL Injection, XSS, Path Traversal / LFI, Command Injection)
 - Anomaly detection trained on local traffic patterns
 - Alert system for detected threats
 - Minimal performance overhead
+
+---
+
+## Documentation
+
+- [docs/architecture.md](docs/architecture.md) — repository layout, end-to-end data flow (raw data → dataset → ONNX models → middleware), and workspace/build conventions.
+- [docs/STATUS.md](docs/STATUS.md) — current implementation status, open issues, and next steps.
 
 ---
 
