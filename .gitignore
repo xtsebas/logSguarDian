@@ -28,3 +28,13 @@ venv/
 # Environment
 .env
 .env.*
+
+# Large training data (regenerate from parsers + extractor CLI)
+training/data_clean/*.jsonl
+training/data_clean/*.csv
+training/data_clean/*.parquet
+training/data_clean/near_duplicates_report.txt
+training/splits/*.parquet
+
+# Sklearn model binaries (use ONNX exports instead)
+training/models/*.pkl
