@@ -140,8 +140,8 @@ No retraining required. No re-split required. The models were trained correctly 
 
 The list of features to drop, in `FEATURE_NAMES` index order:
 ```typescript
-// indices 54 (status_code) and 67-71 (Group 9)
-const EXCLUDED_FEATURE_INDICES = [54, 67, 68, 69, 70, 71];
+// indices 66-71 (Group 9: status_code + behavioural rate features)
+const EXCLUDED_FEATURE_INDICES = [66, 67, 68, 69, 70, 71];
 // names: status_code, req_count_1s, req_count_5s, req_count_60s,
 //        error_rate_4xx_60s, endpoint_diversity_60s
 ```
