@@ -39,8 +39,10 @@ training/data_clean/*.parquet
 training/data_clean/near_duplicates_report.txt
 training/splits/*.parquet
 
-# Sklearn model binaries (use ONNX exports instead)
+# Sklearn model binaries — RF pkls are large (rf_v2.pkl = 18MB); use ONNX for inference
 training/models/*.pkl
+# IF pkls are small (~1MB) and needed for local reproducibility without re-running F3.5
+!training/models/if_v*.pkl
 
 # packages/core bundles ONNX models from training/models/ at build/publish time;
 # avoid duplicating the binaries in git (training/models/ is the source of truth)
