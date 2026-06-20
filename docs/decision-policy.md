@@ -67,17 +67,36 @@ provisional 0.80 with no material precision cost. The jump from 0.70 to 0.80 tra
 a blocking RASP. If zero false blocks is an explicit hard requirement, 0.80 remains
 defensible.
 
-### 2.3 Isolation Forest — if_v1.pkl
+### 2.3 Isolation Forest — if.onnx (test set, R2 one-time read)
 
-`if_v1.pkl` is gitignored and not on local disk. Official metrics are from the
-calibration run on the validation set, which is the designated partition for IF tuning
-per PLAN.md task 3.5.
+`if_v1.pkl` is gitignored and not present on local disk. Test-set evaluation was run
+directly against `if.onnx` via Python `onnxruntime`. This is equivalent to running
+against `if_v1.pkl` — parity between the two was confirmed at maxDiff=1.89e-07
+(see `training/models/parity_report.json`).
 
-| Metric | Value | Criterion | Result |
-|--------|-------|-----------|--------|
-| Recall (attacks flagged as anomaly) | 0.6654 | ≥ 0.50 | PASS ✓ |
-| FP rate (benign flagged as anomaly) | 0.0990 | ≤ 0.10 | PASS ✓ |
-| Threshold (IF score) | 0.04428754 | — | — |
+| Metric | Val set (calibration) | Test set (final, 2026-06-20) | Criterion | Result |
+|--------|----------------------|------------------------------|-----------|--------|
+| Recall (attacks flagged as anomaly) | 0.6654 | **0.6662** | ≥ 0.50 | PASS ✓ |
+| FP rate (benign flagged as anomaly) | 0.0990 | **0.1011** | ≤ 0.10 | **FAIL ✗** |
+| Threshold (IF score) | 0.04428754 | 0.04428754 | — | — |
+
+Test counts: TP=27,917 · FP=1,824 · FN=13,988 · TN=16,218
+
+**FP rate exceeds criterion by 0.0011 (10.11% vs 10.00% gate).** The val-to-test
+delta is +0.0021 — consistent with expected generalization noise, not a systematic
+failure. Recall is stable (+0.0008 delta).
+
+**Operational impact is bounded:** IF holds no blocking authority (Section 3.1). A
+10.11% FP rate means 10.11% of benign requests receive an `is_anomaly=true` log
+annotation instead of the 9.90% seen during calibration. This adds marginal log
+noise but does not cause any request to be incorrectly blocked.
+
+**Why R2 prohibits recalibration:** adjusting `IF_THRESHOLD` to achieve FP ≤ 0.10
+on the test set would constitute tuning on the locked partition — a methodological
+violation. The threshold remains at 0.04428754 (val-calibrated). If the FP criterion
+is a hard gate for thesis acceptance, the correct path is to reopen PLAN.md task 3.5,
+recalibrate on val with a stricter target (e.g. FP ≤ 0.08 to leave test headroom),
+retrain, and re-export — which is a separate tracked task, not a fix in this PR.
 
 Both criteria from PLAN.md task 3.5 satisfied. Metrics are val-set; test-set IF
 evaluation is deferred to the end-to-end detection suite (PLAN.md task 5.7).
@@ -196,5 +215,5 @@ This allows dark-launch validation before switching to `'block'`.
 | ID | Item | Status | Resolved value / note |
 |----|------|--------|-----------------------|
 | P1 | RF_THRESHOLD — final value from test set | **CLOSED 2026-06-20** | `0.70` — precision=0.9999, recall=0.9749 on test.parquet |
-| P2 | IF recall and FP rate on test set | **CLOSED 2026-06-20** | Using val-set metrics as official (recall=0.6654, FP=0.0990, both PASS). Test-set IF run deferred to task 5.7 (if_v1.pkl gitignored). |
+| P2 | IF recall and FP rate on test set | **CLOSED 2026-06-20 — CRITERION FAIL** | Ran via if.onnx (parity 1.89e-07). recall=0.6662 PASS · FP=0.1011 FAIL (exceeds 0.10 by 0.0011). Operational impact bounded (IF not blocking). Recalibration requires reopening task 3.5 — tracked separately. |
 | P3 | Fail-open timeout — empirical p99 | **OPEN** | Provisional `50 ms`. Requires F6 Artillery benchmark (PLAN.md task 6.2). No per-inference latency data exists yet. |
