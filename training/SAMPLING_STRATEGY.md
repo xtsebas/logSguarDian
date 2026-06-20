@@ -1,5 +1,6 @@
 # Sampling Strategy
 **Date:** 2026-06-10  
+**First SMOTE application:** 2026-06-14 (hyperparameter sweep — train-only, val/test untouched)  
 **Input:** 974,718 rows across 7 JSONL files (post-deduplication counts approximate until unify.py runs)
 
 ---
@@ -66,6 +67,9 @@ X_resampled, y_resampled = smote.fit_resample(X_train, y_train)
 
 **Limitation to document in thesis (Section 8.3 — Threats to Validity):**  
 SMOTE operates in the 66-dimensional feature space, not on raw text. Synthetic cmdi samples are linear interpolations between real feature vectors. This can produce feature combinations that correspond to no real attack payload — for example, a synthetic vector might have non-zero `shell_command_count` and `sqli_keyword_count` simultaneously, which would be unusual in real traffic. This is acknowledged as a source of potential overfitting to synthetic patterns on the cmdi class. Mitigation: the leave-one-source-out cross-validation in task 3.6 will reveal whether cmdi F1 degrades substantially on held-out sources.
+
+**Observed result (2026-06-14 sweep):**  
+SMOTE with target=25,000 cmdi was applied and the sweep re-run at max_depth ≤ 20. cmdi F1 improved by only +0.015 at depth=15 (0.593 → 0.608) and was unchanged at depth=20 (0.772 → 0.763). The gain was negligible — the decision boundary for cmdi requires depth ≥ 25 regardless of sample count, because the problem is separability in feature space (cmdi patterns overlap with path traversal and benign shell command use), not data quantity. SMOTE is not sufficient alone to reach cmdi F1 ≥ 0.80 within the 150 MB RSS budget. See docs/results.md F4.4 for the full trade-off analysis.
 
 ---
 
