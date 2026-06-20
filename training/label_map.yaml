@@ -1,0 +1,96 @@
+# training/label_map.yaml
+# Canonical label taxonomy — single source of truth per PLAN.md 2.3.
+# Maps each dataset's raw label strings/columns to the 5 canonical classes.
+
+canonical_classes:
+  - sqli
+  - xss
+  - path_traversal
+  - cmdi
+  - benign
+
+mappings:
+
+  # data_capec_multilabel.csv (SR-BH 2020, Harvard Dataverse 10.7910/DVN/OGOIXX)
+  # Priority-ordered: first matching CAPEC column wins.
+  # Rows where no listed column is "1" are discarded — capec source has no benign rows.
+  capec:
+    priority:
+      - label: sqli
+        columns:
+          - "66 - SQL Injection"
+      - label: path_traversal
+        columns:
+          - "126 - Path Traversal"
+      - label: cmdi
+        columns:
+          - "88 - OS Command Injection"
+          - "248 - Command Injection"
+      - label: xss
+        columns:
+          - "242 - Code Injection"
+
+  # data/modsec-learn/ (Scano et al., 2024 — github.com/pralab/modsec-learn-dataset)
+  # File-stem → canonical label; the entire file is one uniform label.
+  # malicious_dataset assigned sqli: UNION SELECT patterns confirmed by inspection.
+  modsec_learn:
+    legitimate_dataset: benign
+    malicious_dataset: sqli
+
+  # data/owasp/ (Lucz & Forstner, 2025 — Zenodo 10.5281/zenodo.17178461)
+  # Priority-ordered patterns matched case-insensitively against ModSecurity H-section text.
+  # Each entry's patterns are OR'd together into one regex.
+  # Rows matching only policy/bot/scanner rules (no WEB_ATTACK/attack-* tag) → skipped.
+  # Rows with no Message: line in H section → benign (un-flagged requests).
+  owasp_logs:
+    priority:
+      - label: sqli
+        patterns:
+          - "attack-sqli"
+          - "WEB_ATTACK/SQL_INJECTION"
+      - label: path_traversal
+        patterns:
+          - "attack-lfi"
+          - "WEB_ATTACK/DIR_TRAVERSAL"
+          - "WEB_ATTACK/FILE_INJECTION"
+          - "WEB_ATTACK/RFI"
+      - label: cmdi
+        patterns:
+          - "attack-rce"
+          - "WEB_ATTACK/COMMAND_INJECTION"
+          - "WEB_ATTACK/PHP_INJECTION"
+          - "WEB_ATTACK/RCE"
+          - "language-shell"
+          - "attack-injection-php"
+      - label: xss
+        patterns:
+          - "attack-xss"
+          - "WEB_ATTACK/XSS"
+
+  # data/payload_full.csv (Kaggle — cyberprince)
+  # Raw attack_type column values → canonical label.
+  payload_full:
+    norm: benign
+    sqli: sqli
+    xss: xss
+    path-traversal: path_traversal
+    cmdi: cmdi
+
+  # data/Payloads.csv (Kaggle — saurabhshahane)
+  # Raw Class column values → canonical label.
+  # "Malicious" assigned xss: all payloads are XSS strings embedded in full URLs.
+  payloads_csv:
+    Benign: benign
+    Malicious: xss
+
+  # data/XSS_dataset.csv (Kaggle — syedsaqlainhussain)
+  # Raw Label column values (integer strings) → canonical label.
+  xss_dataset:
+    "0": benign
+    "1": xss
+
+  # data/command injection.csv (Kaggle — sanketpawase)
+  # Raw Label column values (integer strings) → canonical label.
+  command_injection:
+    "0": benign
+    "1": cmdi

@@ -25,21 +25,19 @@ Zero benign blocks are present in the source. This is documented.
 import json
 import os
 import re
+import yaml
 from pathlib import Path
 
 ROOT = Path(__file__).parent.parent.parent
 DATA_DIR = ROOT / "data" / "owasp"
 OUTPUT = ROOT / "training" / "data_clean" / "owasp_logs.jsonl"
 
-LABEL_PRIORITY = [
-    ("sqli",           re.compile(
-        r'attack-sqli|WEB_ATTACK/SQL_INJECTION', re.IGNORECASE)),
-    ("path_traversal", re.compile(
-        r'attack-lfi|WEB_ATTACK/DIR_TRAVERSAL|WEB_ATTACK/FILE_INJECTION|WEB_ATTACK/RFI', re.IGNORECASE)),
-    ("cmdi",           re.compile(
-        r'attack-rce|WEB_ATTACK/COMMAND_INJECTION|WEB_ATTACK/PHP_INJECTION|WEB_ATTACK/RCE|language-shell|attack-injection-php', re.IGNORECASE)),
-    ("xss",            re.compile(
-        r'attack-xss|WEB_ATTACK/XSS', re.IGNORECASE)),
+with open(ROOT / "training" / "label_map.yaml") as _f:
+    _owasp_cfg = yaml.safe_load(_f)["mappings"]["owasp_logs"]["priority"]
+
+LABEL_PRIORITY: list[tuple[str, re.Pattern[str]]] = [
+    (entry["label"], re.compile("|".join(entry["patterns"]), re.IGNORECASE))
+    for entry in _owasp_cfg
 ]
 
 SECTION_RE = re.compile(r'--[0-9a-f]+-([A-Z])--\n?')
