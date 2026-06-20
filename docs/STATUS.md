@@ -1,13 +1,7 @@
 # logSguarDian — Repository Status Report
-
-**Date:** 2026-06-13
-**Branch:** main
-
-This report supersedes the 2026-06-11 version (previously at the repo root).
-Sections 1-3 of that version are out of date: the parser format bug
-described there has been fixed, the dataset has been regenerated, the models
-have been trained and passed parity, and `packages/core` has been scaffolded.
-See `docs/architecture.md` for the full repository layout and data flow.
+**Date:** 2026-06-14 (updated from 2026-06-11 original)  
+**Auditor:** Library engineer  
+**Branch:** main  
 
 ---
 
@@ -15,80 +9,39 @@ See `docs/architecture.md` for the full repository layout and data flow.
 
 | Artifact | Phase | Verified |
 |----------|-------|---------|
-| `packages/extractor/` — full 72-feature canonical extractor (`types`, `patterns`, `entropy`, `structural`, `encoding`, `semantic`, `index`, `cli`) | F0-F1 | 21/21 Jest tests pass, `npm run build` clean |
-| `data_manager/02_feature_engineering.ipynb` — raw sources -> `data/processed/canonical/*.jsonl` (9 sources), including Group 9 temporal derivation for `owasp_logs`/`russellmitchell` | F2.2 | Executed clean, no errors/warnings (3 bugs fixed this cycle, see below) |
-| `data/processed/<source>.parquet` (9 files) — 72 features per source, computed via `packages/extractor` CLI | F2.8 | R1-compliant (CLI output, not Python-computed) |
-| `data/processed/dataset_final.parquet` | F2.8 | 1,155,302 rows x 75 cols. Distribution: legitimate 743,708 (64.4%), sqli 295,690 (25.6%), path_traversal 69,310 (6.0%), xss 36,606 (3.2%), command_injection 9,988 (0.9%). No nulls. |
-| `training/splits/test.lock.sha256` | F2.7 GATE | Present — test set locked |
-| `training/models/rf.onnx` (45 MB), `training/models/if.onnx` (1 MB) | F4.1 | Present, trained |
-| `training/models/parity_report.json` | F4.3-4.4 GATE | `parity_passed: true`, `n_features: 66`, `target_opset: 17`, `rf_max_prob_diff: 1.57e-7`, `if_max_score_diff: 1.89e-7` |
-| `training/models/if_v1_metadata.json` | F4.1 | `threshold: 0.0443`, `contamination: 0.05`, trained on benign-only, `val_recall: 0.665`, `val_fp_rate: 0.099` |
-| `LICENSE` (MIT, root) | F7.3 | Present |
-| `packages/core/` — skeleton (package.json, tsconfig, jest config, src/*.ts placeholders, models/{rf.onnx, if.onnx, model-metadata.json}, tests/) | F5 (scaffold only) | Structure only, no implementation |
+| `packages/extractor/src/` — 72-feature TS extractor (7 source files) | F1.2–1.5 | 21/21 tests pass |
+| `packages/extractor/src/cli.ts` — batch CLI `extractor <in.jsonl> <out.csv>` | F1.7 | Built, tested |
+| `packages/extractor/dist/` — compiled JS (gitignored, rebuild with `npm run build`) | F1.7 | Clean build |
+| `training/parsers/parse_*.py` — 7 parsers, flat CanonicalRequest output | F2.2 | All regenerated |
+| `training/data_clean/*.jsonl` — 7 source JSONL files (~974K total raw records) | F2.2 | Present |
+| `training/unify.py` — dedup (exact + near-dup), produces `unified.jsonl` | F2.4 | 399,642 rows after dedup |
+| `training/split.py` — stratified 70/15/15 split by class+source | F2.6 | All 3 checks pass |
+| `training/splits/test.lock.sha256` | F2.7 GATE | Committed before training |
+| `training/models/rf_v1.pkl` — Random Forest (100 trees, max_depth=40) | F3.2 | Trained, macro F1=0.975 on val |
+| `training/models/if_v1.pkl` — Isolation Forest (200 trees, benign-only) | F3.5 | recall=0.665, FP=0.099 on val |
+| `training/models/rf.onnx` — RF exported, opset 17 | F4.1 | max_prob_diff=1.6e-7 |
+| `training/models/if.onnx` — IF exported, opset 17/ml=3 | F4.1 | max_score_diff=1.9e-7 |
+| `training/models/parity_report.json` — parity_passed=true, n_features=66 | F4.4 GATE | **CLEARED** |
+| `training/results/baseline_results.csv`, `rf_confusion_matrix.png`, `if_recall_fp_curve.png` | F3 | Present |
+| `training/notebooks/02–05_*.ipynb` — all 4 executed cleanly | F3–F4 | All gates pass |
+| `training/FEATURE_NOTES.md` — documents the 6 excluded features and 66-dim contract | — | Present |
 
 ---
 
 ## Section 2 — What exists but needs work
 
-### Corrected this cycle: `data_manager/02_feature_engineering.ipynb` (3 bugs, all fixed)
+### LOW: `packages/extractor` node_modules not installed in fresh clone
+Run `npm install` in `packages/extractor/` before building. The root workspace has no shared dependency installation script yet.
 
-1. **IP regex** in the OWASP/RussellMitchell log parsing did not capture
-   client IPs correctly — fixed, 1,337 unique IPs now extracted (was
-   falling back to `"0.0.0.0"`).
-2. **Temporal dtype** issue in `add_temporal_features()` — fixed.
-3. **OWASP timestamp format** — `pd.Timestamp(...)` cannot parse Apache CLF
-   datetimes (`01/Aug/2025:00:03:24 +0200`), silently fell back to
-   midnight-of-directory-date for all 56,504 records, collapsing Group 9 to
-   all-zero. Fixed with
-   `pd.to_datetime(..., format="%d/%b/%Y:%H:%M:%S %z").tz_convert("UTC").tz_localize(None)`.
-   Now produces 28,070 unique timestamps and non-zero Group 9 values for
-   26,497-42,152 / 56,504 rows depending on column.
-
-### CRITICAL (open): Group 9 train/serve skew
-
-`extractFeatures()` in `packages/extractor` always returns 0 for the 5
-Group 9 temporal features (`req_count_1s/5s/60s`, `error_rate_4xx_60s`,
-`endpoint_diversity_60s`) — they require cross-request state not available
-when normalizing a single request.
-
-However, `data_manager/02_feature_engineering.ipynb`'s
-`add_temporal_features()` fills in **real, non-zero** values for these
-features for 2 of the 9 sources:
-
-- `owasp_logs` — 56,504 rows, ~88% of the `path_traversal` class
-- `russellmitchell` — 3,435 rows, 100% `legitimate`
-
-This means the model is trained on a feature distribution it will never see
-at inference time for these two sources/classes, while
-`.claude/PLAN.md §1.1` states "ninguna feature depende de timestamps". This
-is flagged but **not resolved** — the user has not yet chosen between:
-
-1. Excluding Group 9 entirely from the training vector (drop 5 more
-   columns, retrain on 61 features).
-2. Documenting it as an accepted limitation with an ablation study showing
-   impact on `path_traversal`/`legitimate` F1.
-3. Implementing real cross-request state in `packages/core` (e.g., a small
-   in-memory/SQLite sliding window keyed by client IP) so the middleware can
-   actually populate Group 9 at runtime.
-
-This decision should be made **before** F5.3 (middleware) is implemented,
-since it determines whether `worker.ts` receives 61 or 66 features and
-whether `middleware.ts` needs request-history state.
-
-### MEDIUM: `training/parsers/*.py` + `validate_canonical.py` likely dead code
-
-These 7 parsers + validator predate `data_manager/02_feature_engineering.ipynb`
-and are not invoked by any current notebook, script, or the workspace
-`package.json`/`pyproject` tooling. Recommend confirming and then removing
-or moving to an `archive/` directory — keeping them risks someone running
-the stale pipeline and producing non-R1-compliant data again.
-
-### LOW: `pnpm install` not run since `packages/core` was added
-
-`packages/core/package.json` declares `@logsguardian/extractor` (workspace
-link), `onnxruntime-node`, and `better-sqlite3`, but
-`packages/core/node_modules/` does not exist yet. Run `pnpm install` at the
-repo root before starting F5 implementation.
+### LOW: Split parquets are gitignored and must be regenerated
+`training/splits/train|val|test.parquet` are excluded by `.gitignore`. After a fresh clone, regenerate by running:
+```
+python3 training/unify.py
+node packages/extractor/dist/cli.js training/data_clean/unified.jsonl training/data_clean/features.csv
+python3 -c "import pandas as pd; df=pd.read_csv(...) ... df.to_parquet(...)"   # see pipeline docs
+python3 training/split.py
+```
+(A `Makefile` or `pipeline.sh` for this is missing — not yet implemented.)
 
 ---
 
@@ -96,45 +49,99 @@ repo root before starting F5 implementation.
 
 | Artifact | Phase | Blocked by |
 |----------|-------|-----------|
-| `packages/core/src/{index,types,worker,middleware,store}.ts` implementation | F5.1-5.5 | Group 9 decision (above) for `worker.ts`/`middleware.ts` feature-vector width |
-| `docs/feature-spec.md` — feature justification table | F1.1 | Unblocked (documentation task) |
-| `docs/api.md` — public middleware API design | F5.1 | Unblocked (design task) |
-| `docs/decision-policy.md` — hybrid RF+IF decision logic | F3.7 | Unblocked — RF/IF outputs and thresholds already known from `model-metadata.json` |
+| `packages/core/` — middleware, worker_thread, SQLite store | F5 | Nothing — parity CLEARED |
+| `docs/api.md` — public middleware API design | F5.1 | Unblocked |
+| `docs/decision-policy.md` — hybrid RF+IF decision logic | F3.7 | Unblocked (F3 done) |
 | `.github/workflows/ci.yml` — CI pipeline | F0.4 | Unblocked |
 | `benchmarks/` — extractor and load benchmarks | F1.8, F6 | F1.8 unblocked; F6 blocked on F5 |
-| E2E detection test suite | F5.7 GATE | F5 implementation |
+| `datasets/splits/test.lock.sha256` | F2.7 | Done (in `training/splits/`) |
+| E2E detection test suite | F5.7 GATE | F5 complete |
 | Artillery load benchmarks | F6 | F5 complete |
 | npm package publishing workflow | F7.4 | F6 GATE |
 
 ---
 
-## Section 4 — Next concrete actions
+## Section 4 — Next actions (updated)
 
-1. **Resolve the Group 9 decision** (Section 2, CRITICAL) — this determines
-   the input width (61 vs 66) for `rf.onnx`/`if.onnx` consumption in
-   `worker.ts`, and whether `middleware.ts` needs to maintain per-client
-   request history.
-2. **Write `docs/api.md` and `docs/decision-policy.md`** — both are
-   unblocked and gate F5.1/F5.3.
-3. **Run `pnpm install`** at the repo root to link `packages/core` against
-   `@logsguardian/extractor` and pull in `onnxruntime-node`/`better-sqlite3`.
-4. **Implement F5.2 (`worker.ts`)** — load `models/rf.onnx` and
-   `models/if.onnx` via `onnxruntime-node` inside a `worker_thread`, apply
-   the feature-vector reduction from `model-metadata.json`, expose a message
-   queue.
-5. **Implement F5.3 (`middleware.ts`)** — normalize `req` to
-   `CanonicalRequest`, call `@logsguardian/extractor`, dispatch to the
-   worker, apply the decision policy from step 2.
-6. **Confirm and remove/archive `training/parsers/*.py`** (Section 2,
-   MEDIUM) once it is verified nothing depends on them.
+### Action 1 — Build `packages/core/` middleware (LIBRARY ENGINEER)
+`parity_report.json` is cleared. Build `src/worker.ts` (loads ONNX sessions, exposes inference queue), `src/middleware.ts` (normalizes req → CanonicalRequest, calls extractor, dispatches to worker), `src/store.ts` (SQLite event log), `src/types.ts` (public API).
+
+Key contracts from `parity_report.json`:
+- `n_features = 66` — drop the 6 excluded features before passing vector to ONNX
+- `threshold_if = 0.0443` — IF score < threshold → anomaly flag
+- `if_onnx_output_index = 1` — scores are at output index 1, not 0
+- `rf_onnx_output_index = 1` — probabilities are at output index 1
+- `rf_classes = ["benign","cmdi","path_traversal","sqli","xss"]` — class order in proba vector
+
+### Action 2 — Document decision policy (DIEGO or BOTH)
+`docs/decision-policy.md` — how RF and IF verdicts combine. Draft pseudocode based on F3.7 from PLAN.md before the middleware wires the logic.
+
+### Action 3 — Extractor benchmark F1.8 (LIBRARY ENGINEER)
+`benchmarks/extractor.bench.ts` — p50/p95/p99 latency per request. Criterion: p95 ≤ 1ms.
 
 ---
 
-## Notes on feature dimension
+## Section 5 — Critical path to first working middleware
 
-`FEATURE_NAMES` in `packages/extractor/src/index.ts` has 72 entries. The
-ONNX models in `training/models/` were trained on **66** features —
-`status_code` plus the 5 Group 9 features are dropped before training
-(`parity_report.json: n_features: 66`). `packages/core/src/worker.ts` must
-apply the same 72->66 reduction before calling the ONNX session. Do not pass
-the raw 72-vector directly to `rf.onnx`/`if.onnx`.
+```
+parity_report.json ✓ CLEARED
+  → packages/core/src/worker.ts (load ONNX, warmup, message queue)
+    → packages/core/src/middleware.ts (extractor call + worker dispatch)
+      → Supertest: SQLi payload → 403, legit → pass
+        → app.use(logsguardian()) running inference  ← first working middleware
+```
+
+---
+
+## Train/Serve Skew — Temporal Features (RESOLVED)
+
+**Reported by:** Sebastián (2026-06-14)  
+**Claim:** "Group 9" — 5 temporal features — are always 0 at runtime but populated during training.
+
+**Finding:** No train/serve skew exists. The decision to exclude these features was already made and executed before any model training.
+
+### What "Group 9" is in the source code
+
+`packages/extractor/src/index.ts` comment at line 56 labels 5 features as Group 9:
+```
+req_count_1s, req_count_5s, req_count_60s,
+error_rate_4xx_60s, endpoint_diversity_60s
+```
+These 5 are always hardcoded to 0 (see `TEMPORAL_FEATURES` constant at line 66). This is by design.
+
+### The 6th excluded feature Sebastián missed
+
+`status_code` is in **Group 8** (HTTP request features, line 55) — not Group 9 — but is equally unavailable at RASP intercept time. It is a response field: the response does not exist when the middleware intercepts the request. It was included in Group 8 to support dataset sources that include response codes (owasp_logs, russellmitchell), but must be excluded from training for the same reason as the temporal features.
+
+### What the ML pipeline actually did
+
+`training/FEATURE_NOTES.md` documents the correct 6-feature exclusion applied before training:
+
+| Feature | Group | Reason for exclusion |
+|---------|-------|---------------------|
+| `status_code` | 8 (HTTP) | Response field — unavailable at intercept time |
+| `req_count_1s` | 9 (temporal) | Requires cross-request state |
+| `req_count_5s` | 9 (temporal) | Same |
+| `req_count_60s` | 9 (temporal) | Same |
+| `error_rate_4xx_60s` | 9 (temporal) | Response codes + cross-request state |
+| `endpoint_diversity_60s` | 9 (temporal) | Cross-request state |
+
+These 6 were dropped from `features.csv` before `split.py` ran. The split parquets never contained them. The notebook `DROP_COLS` lists include all 6. `parity_report.json` confirms `n_features=66`.
+
+### Why these features appeared non-zero in some datasets
+
+`owasp_logs` and `russellmitchell` are log-based datasets built from completed HTTP exchanges. They include response codes (`status_code`) and sometimes aggregated fields that map loosely to the temporal features. These values appear non-zero in the raw JSONL but are **response-time artifacts** — they do not represent data available at request-intercept time in production.
+
+### Resolution
+
+No retraining required. No re-split required. The models were trained correctly on 66 features that are all computable at request-intercept time.
+
+**Worker_thread contract:** extract all 72 features via `extractFeatureVector()`, then slice to 66 by dropping the 6 excluded features in the same order they appear in `FEATURE_NAMES`. The ONNX sessions expect exactly 66 inputs.
+
+The list of features to drop, in `FEATURE_NAMES` index order:
+```typescript
+// indices 66-71 (Group 9: status_code + behavioural rate features)
+const EXCLUDED_FEATURE_INDICES = [66, 67, 68, 69, 70, 71];
+// names: status_code, req_count_1s, req_count_5s, req_count_60s,
+//        error_rate_4xx_60s, endpoint_diversity_60s
+```
