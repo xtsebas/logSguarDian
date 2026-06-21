@@ -8,13 +8,15 @@ Mapped to CanonicalRequest with body = Sentence (the content is body-like HTML).
 
 import csv
 import json
+import yaml
 from pathlib import Path
 
 ROOT = Path(__file__).parent.parent.parent
 INPUT = ROOT / "data" / "XSS_dataset.csv" / "XSS_dataset.csv"
 OUTPUT = ROOT / "training" / "data_clean" / "xss_dataset.jsonl"
 
-LABEL_MAP = {"0": "benign", "1": "xss"}
+with open(ROOT / "training" / "label_map.yaml") as _f:
+    LABEL_MAP: dict[str, str] = yaml.safe_load(_f)["mappings"]["xss_dataset"]
 
 
 def main() -> None:

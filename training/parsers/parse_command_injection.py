@@ -9,13 +9,15 @@ HTML entities decoded before output.
 import csv
 import html
 import json
+import yaml
 from pathlib import Path
 
 ROOT = Path(__file__).parent.parent.parent
 INPUT = ROOT / "data" / "command injection.csv"
 OUTPUT = ROOT / "training" / "data_clean" / "command_injection.jsonl"
 
-LABEL_MAP = {"0": "benign", "1": "cmdi"}
+with open(ROOT / "training" / "label_map.yaml") as _f:
+    LABEL_MAP: dict[str, str] = yaml.safe_load(_f)["mappings"]["command_injection"]
 
 
 def main() -> None:

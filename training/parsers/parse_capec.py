@@ -9,6 +9,7 @@ Rows with no target-class label are discarded.
 import csv
 import json
 import sys
+import yaml
 from pathlib import Path
 from urllib.parse import urlparse, parse_qs
 
@@ -16,11 +17,11 @@ ROOT = Path(__file__).parent.parent.parent
 INPUT = ROOT / "data" / "data_capec_multilabel.csv"
 OUTPUT = ROOT / "training" / "data_clean" / "capec.jsonl"
 
-LABEL_PRIORITY = [
-    ("sqli",           {"66 - SQL Injection"}),
-    ("path_traversal", {"126 - Path Traversal"}),
-    ("cmdi",           {"88 - OS Command Injection", "248 - Command Injection"}),
-    ("xss",            {"242 - Code Injection"}),
+with open(ROOT / "training" / "label_map.yaml") as _f:
+    _capec_cfg = yaml.safe_load(_f)["mappings"]["capec"]["priority"]
+
+LABEL_PRIORITY: list[tuple[str, set[str]]] = [
+    (entry["label"], set(entry["columns"])) for entry in _capec_cfg
 ]
 
 

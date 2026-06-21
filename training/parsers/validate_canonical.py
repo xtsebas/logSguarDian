@@ -16,13 +16,15 @@ Reports: total rows, class distribution, invalid row count + reasons.
 
 import json
 import sys
+import yaml
 from pathlib import Path
 from collections import Counter
 
 ROOT = Path(__file__).parent.parent.parent
 DATA_CLEAN = ROOT / "training" / "data_clean"
 
-VALID_LABELS = {"sqli", "xss", "path_traversal", "cmdi", "benign"}
+with open(ROOT / "training" / "label_map.yaml") as _f:
+    VALID_LABELS: set[str] = set(yaml.safe_load(_f)["canonical_classes"])
 REQUIRED_FIELDS = {"method", "path", "query", "label"}
 
 

@@ -3,6 +3,8 @@
 **Analyst:** ML pipeline exploration (F1 pre-work)  
 **Purpose:** Document all datasets before F2 (unification). Block training until capec issue is resolved.
 
+**Label taxonomy:** `training/label_map.yaml` is the single source of truth for label mappings (PLAN.md 2.3). All parsers in `training/parsers/` load from it — do not modify label strings in the parsers directly.
+
 ---
 
 ## 1. Raw Datasets

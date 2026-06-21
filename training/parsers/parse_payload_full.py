@@ -7,19 +7,15 @@ Only attack_type column is used for label mapping.
 
 import csv
 import json
+import yaml
 from pathlib import Path
 
 ROOT = Path(__file__).parent.parent.parent
 INPUT = ROOT / "data" / "payload_full.csv"
 OUTPUT = ROOT / "training" / "data_clean" / "payload_full.jsonl"
 
-LABEL_MAP = {
-    "norm":           "benign",
-    "sqli":           "sqli",
-    "xss":            "xss",
-    "path-traversal": "path_traversal",
-    "cmdi":           "cmdi",
-}
+with open(ROOT / "training" / "label_map.yaml") as _f:
+    LABEL_MAP: dict[str, str] = yaml.safe_load(_f)["mappings"]["payload_full"]
 
 
 def main() -> None:
