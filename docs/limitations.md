@@ -80,3 +80,43 @@ The system was trained on public datasets (CAPEC, ModSecurity, OWASP, payload
 corpora). Real production traffic may differ in length distribution, encoding,
 User-Agent patterns, and feature combinations. The leave-one-source-out validation
 (Task 3.6 in PLAN.md) is pending and will measure per-source degradation.
+
+---
+
+## 5. Near-Duplicate Detection Scope Gap
+
+Near-duplicate detection (Levenshtein edit distance < 3 on the `query` field) was
+implemented in `training/unify.py` and ran on the data that produced `train.parquet`.
+The 213,879 rows (53.5%) with empty `query` fields were correctly excluded — for
+those records, attack signal lives in `path` or `body`. Two independent gaps remain:
+
+**(a) 100-character query cutoff — unjustified scope restriction.**
+82,262 rows (20.6%) had non-empty queries longer than 100 characters and were never
+evaluated for near-duplicates. The only rationale in the source code is the comment
+"short queries likely duplicates" (`unify.py:118`); no performance analysis or
+empirical observation supports this threshold. Long encoded payloads — URL-encoded
+SQLi chains, multi-parameter XSS strings — are disproportionately in this excluded
+segment: 10.7% of sqli rows, 15.2% of xss rows, and 43.7% of benign rows exceed
+the cutoff. Minor payload variations in those rows were never flagged.
+
+**(b) max_pairs=10,000 cap — near-zero pairwise coverage within the scanned window.**
+Even among the 103,501 rows within the 1–100 char window, the scan is capped at
+10,000 comparisons per label bucket. For sqli, this covers under 0.002% of possible
+within-label pairs (~976M total). The cap is the more significant gap: it means even
+the "scanned" segment provides no statistical confidence that near-duplicates were
+detected for any class with more than a few hundred items.
+
+Near-duplicate removal was not performed in any case — the pipeline flags pairs but
+retains all records. The 211 flagged pairs from the most recent run (Jun 14 2026)
+remain in the training data.
+
+Se evaluó corregir esta limitación re-ejecutando la detección de near-duplicates sin
+el límite de 100 caracteres y sin el cap de max_pairs. Se decidió no hacerlo en esta
+etapa del proyecto: cualquier cambio al dataset unificado invalidaría los modelos
+finales ya entrenados y validados (rf_v2.pkl, if_v1.pkl), requiriendo repetir la
+cadena completa de re-entrenamiento y re-verificación de paridad ONNX (Fases 4.2–4.4),
+ya ejecutada dos veces durante el proyecto por razones similares de deriva de datos.
+Se documenta como limitación reconocida y línea de trabajo futuro, en lugar de
+remediarse retroactivamente.
+
+See `training/DEDUP_METHODOLOGY.md` for full methodology detail and gap quantification.
