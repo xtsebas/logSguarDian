@@ -1,7 +1,6 @@
 # Decision Policy — logSguarDian
 
 **Status: COMPLETE — closed 2026-06-20**  
-**Authors:** Sebastian Barrera (Section 3 design), Diego Valenzuela (Sections 1, 2, 4, 5)  
 **Corresponds to:** PLAN.md task 3.7
 
 ---
@@ -107,8 +106,6 @@ evaluation is deferred to the end-to-end detection suite (PLAN.md task 5.7).
 
 ### 3.1 Decision Table
 
-*This section authored by Sebastian Barrera. Do not modify without coordination.*
-
 ```
 GIVEN  request: CanonicalRequest
        rf_probs: float[5]        // predict_proba output, indexed by rf_classes
@@ -138,8 +135,6 @@ VERDICT
 ```
 
 ### 3.2 Design Justification
-
-*This section authored by Sebastian Barrera. Do not modify without coordination.*
 
 **RF holds sole blocking authority.** The Isolation Forest is an unsupervised model
 trained only on benign traffic; it has no knowledge of attack class structure and
