@@ -60,7 +60,7 @@ describe("logsguardian middleware — smoke tests", () => {
     expect(res.status).not.toHaveBeenCalled();
   });
 
-  test("with real models: block mode sends 403 on SQLi (requires models)", async () => {
+  test("with real models: block mode sends 403 on SQLi GET query param", async () => {
     const modelDir = path.join(__dirname, "../../../training/models");
     const workerPath = path.join(__dirname, "../dist/worker.js");
 
@@ -76,22 +76,24 @@ describe("logsguardian middleware — smoke tests", () => {
     }
 
     const mw = logsguardian({ mode: "block", timeoutMs: 5000, dbPath: ":memory:", modelDir });
-    // Give the worker time to load the models.
+    // Give the worker time to load the models before sending real traffic.
     await new Promise((r) => setTimeout(r, 3000));
 
+    // GET request: attack payload is in the query string, req.body is {} (default Express).
+    // This is the canonical delivery vector for SQLi/XSS/PT/CMDi — the body bug would
+    // make the middleware serialize {} to "{}" and shadow the query string entirely.
     const sqliReq = makeReq({
       method: "GET",
       path: "/products",
       query: { id: "1' OR '1'='1' UNION SELECT username,password FROM users--" } as unknown as Request["query"],
+      body: {}, // default Express body — must NOT shadow the query
     });
 
     const next = jest.fn() as unknown as NextFunction;
     const res = makeRes();
     await mw(sqliReq, res, next);
 
-    // Either blocked (403) or fail-open depending on model state.
-    const wasBlocked = (res.status as jest.Mock).mock.calls.some(([code]) => code === 403);
-    const wasPassed = (next as jest.Mock).mock.calls.length > 0;
-    expect(wasBlocked || wasPassed).toBe(true);
+    expect(res.status).toHaveBeenCalledWith(403);
+    expect(next).not.toHaveBeenCalled();
   }, 15000);
 });

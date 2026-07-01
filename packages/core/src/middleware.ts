@@ -97,8 +97,7 @@ export function logsguardian(options: MiddlewareOptions = {}): RequestHandler {
   }
 
   function applyPolicy(
-    response: WorkerResponse,
-    elapsedMs: number
+    response: WorkerResponse
   ): { verdict: Verdict; predicted_class: AttackClass; confidence: number; if_score: number } {
     if (response.error || !response.rfProbs || response.ifScore === undefined) {
       return {
@@ -126,7 +125,6 @@ export function logsguardian(options: MiddlewareOptions = {}): RequestHandler {
     }
 
     return { verdict, predicted_class, confidence, if_score: ifScore };
-    void elapsedMs;
   }
 
   return async function logsguardianMiddleware(
@@ -141,7 +139,14 @@ export function logsguardian(options: MiddlewareOptions = {}): RequestHandler {
       method: req.method,
       path: req.path,
       query: typeof req.query === "string" ? req.query : new URLSearchParams(req.query as Record<string, string>).toString(),
-      body: typeof req.body === "string" ? req.body : (req.body ? JSON.stringify(req.body) : ""),
+      // req.body is {} by default when no body-parser populates it (truthy but empty).
+      // Checking key count avoids treating "{}" as a real body, which would shadow
+      // the query string — where SQLi/XSS/PT/CMDi payloads are overwhelmingly delivered.
+      body: typeof req.body === "string"
+        ? req.body
+        : (req.body && typeof req.body === "object" && Object.keys(req.body).length > 0
+          ? JSON.stringify(req.body)
+          : ""),
       userAgent: (req.headers["user-agent"] as string) ?? "",
       contentType: (req.headers["content-type"] as string) ?? "",
       referer: (req.headers["referer"] as string) ?? "",
@@ -163,8 +168,7 @@ export function logsguardian(options: MiddlewareOptions = {}): RequestHandler {
       result = { verdict: "timeout", predicted_class: "benign", confidence: 0, if_score: 0 };
     } else {
       const workerResp = await infer(vector);
-      const elapsedMs = Date.now() - t0;
-      result = applyPolicy(workerResp, elapsedMs);
+      result = applyPolicy(workerResp);
     }
 
     const elapsedMs = Date.now() - t0;
