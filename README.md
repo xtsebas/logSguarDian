@@ -39,6 +39,12 @@ logsGuarDian addresses this gap by providing:
 
 ---
 
+## Commands
+
+- [docs/commands.md](docs/commands.md) — CLI reference: `config init`, `config show`, `config set`, `config validate`.
+
+---
+
 ## Documentation
 
 - [docs/architecture.md](docs/architecture.md) — repository layout, end-to-end data flow (raw data → dataset → ONNX models → middleware), and workspace/build conventions.
