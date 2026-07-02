@@ -9,7 +9,7 @@ module.exports = {
       testMatch: ["<rootDir>/tests/**/*.test.ts"],
       testPathIgnorePatterns: ["parity.node.test.ts"],
       transform: {
-        "^.+\\.tsx?$": ["ts-jest", { diagnostics: { ignoreCodes: [151002] } }],
+        "^.+\\.tsx?$": ["ts-jest", { tsconfig: "tsconfig.test.json", diagnostics: { ignoreCodes: [151002] } }],
       },
     },
     {
@@ -19,7 +19,7 @@ module.exports = {
       testEnvironment: "<rootDir>/jest-ort-environment.js",
       testMatch: ["<rootDir>/tests/parity.node.test.ts"],
       transform: {
-        "^.+\\.tsx?$": ["ts-jest", { diagnostics: { ignoreCodes: [151002] } }],
+        "^.+\\.tsx?$": ["ts-jest", { tsconfig: "tsconfig.test.json", diagnostics: { ignoreCodes: [151002] } }],
       },
     },
   ],
