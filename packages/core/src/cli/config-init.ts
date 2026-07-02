@@ -9,6 +9,12 @@ module.exports = {
   /** 'block': send HTTP 403 on detected attacks. 'monitor': log only, never block. */
   mode: 'block',
 
+  /** RF confidence threshold (0–1). Requests with confidence >= threshold are blocked. */
+  threshold: 0.70,
+
+  /** Model to use for inference: 'rf', 'if', or 'hybrid' (RF + anomaly detection). */
+  model: 'hybrid',
+
   /** Fail-open timeout in ms. If inference takes longer the request is passed through. */
   timeoutMs: 50,
 
