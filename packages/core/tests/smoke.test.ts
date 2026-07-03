@@ -9,7 +9,7 @@
  */
 import * as path from "path";
 import type { Request, Response, NextFunction } from "express";
-import { logsguardian } from "../src/index";
+import { logsguardian } from "../dist/index";
 
 function makeReq(overrides: Partial<Request> = {}): Request {
   return {

@@ -11,6 +11,8 @@
  */
 import { runConfigInit } from "./cli/config-init";
 import { runConfigShow } from "./cli/config-show";
+import { runConfigSet } from "./cli/config-set";
+import { runConfigValidate } from "./cli/config-validate";
 import { requireConfig } from "./cli/guard";
 
 const args = process.argv.slice(2);
@@ -26,13 +28,23 @@ switch (command) {
     runConfigShow(commandArgs);
     break;
 
+  case "config set":
+    runConfigSet(commandArgs);
+    break;
+
+  case "config validate":
+    runConfigValidate();
+    break;
+
   case "":
   case "--help":
   case "-h":
     console.log("Usage: logsguardian <command>\n");
     console.log("Commands:");
-    console.log("  config init   Generate logsguardian.config.js with default values");
-    console.log("  config show   Print the active configuration");
+    console.log("  config init              Generate logsguardian.config.js with default values");
+    console.log("  config show              Print the active configuration");
+    console.log("  config set <key> <value> Modify a config key (threshold, mode, model)");
+    console.log("  config validate          Check configuration coherence and model file existence");
     console.log("\nAll commands except 'config init' require logsguardian.config.js");
     console.log("in the current directory. Run 'logsguardian config init' first.");
     break;
