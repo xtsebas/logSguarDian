@@ -33,7 +33,8 @@ export interface DetectionEvent {
 /** Message sent from middleware to worker. */
 export interface WorkerRequest {
   id: number;
-  vector: number[];
+  /** Raw normalised request — feature extraction runs inside the worker thread. */
+  canonical: import("@logsguardian/extractor").CanonicalRequest;
 }
 
 /** Message sent from worker to middleware. */

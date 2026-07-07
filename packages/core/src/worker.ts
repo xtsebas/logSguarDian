@@ -12,7 +12,7 @@
 import { parentPort, workerData } from "worker_threads";
 import * as ort from "onnxruntime-node";
 import * as path from "path";
-import { FEATURE_NAMES } from "@logsguardian/extractor";
+import { FEATURE_NAMES, extractFeatureVector } from "@logsguardian/extractor";
 import type { WorkerRequest, WorkerResponse } from "./types";
 
 const RF_OUTPUT_IDX: number = 1;
@@ -64,7 +64,8 @@ parentPort!.on("message", async (msg: WorkerRequest) => {
 
   try {
     const { rfSession, ifSession } = sessions;
-    const input66 = Float32Array.from(MODEL_INDICES.map((i) => msg.vector[i]));
+    const vector72 = extractFeatureVector(msg.canonical);
+    const input66 = Float32Array.from(MODEL_INDICES.map((i) => vector72[i]));
     const tensor = new ort.Tensor("float32", input66, [1, 66]);
 
     const [rfResult, ifResult] = await Promise.all([

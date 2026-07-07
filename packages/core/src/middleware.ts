@@ -17,10 +17,7 @@
 import { Worker } from "worker_threads";
 import * as path from "path";
 import type { Request, Response, NextFunction, RequestHandler } from "express";
-import {
-  extractFeatureVector,
-  normalizeCanonicalRequest,
-} from "@logsguardian/extractor";
+import { normalizeCanonicalRequest } from "@logsguardian/extractor";
 import { EventStore } from "./store";
 import type {
   AttackClass,
@@ -83,7 +80,7 @@ export function logsguardian(options: MiddlewareOptions = {}): RequestHandler {
     worker = null;
   }
 
-  function infer(vector: number[]): Promise<WorkerResponse> {
+  function infer(canonical: import("@logsguardian/extractor").CanonicalRequest): Promise<WorkerResponse> {
     return new Promise((resolve) => {
       const id = ++_requestId;
       const timer = setTimeout(() => {
@@ -91,7 +88,7 @@ export function logsguardian(options: MiddlewareOptions = {}): RequestHandler {
         resolve({ id, error: "timeout" });
       }, timeoutMs);
       pending.set(id, { resolve, timer });
-      const req: WorkerRequest = { id, vector };
+      const req: WorkerRequest = { id, canonical };
       worker!.postMessage(req);
     });
   }
@@ -160,14 +157,12 @@ export function logsguardian(options: MiddlewareOptions = {}): RequestHandler {
       ),
     });
 
-    const vector = extractFeatureVector(canonical);
-
     let result: { verdict: Verdict; predicted_class: AttackClass; confidence: number; if_score: number };
 
     if (!worker) {
       result = { verdict: "timeout", predicted_class: "benign", confidence: 0, if_score: 0 };
     } else {
-      const workerResp = await infer(vector);
+      const workerResp = await infer(canonical);
       result = applyPolicy(workerResp);
     }
 
