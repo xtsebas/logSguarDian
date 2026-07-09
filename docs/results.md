@@ -190,3 +190,25 @@ No leak: growth over 2000 calls = +1.50 MB. V8 heap stable (~4 MB).
 > (+0.015 improvement at depth=15, no impact at depth=20). The final configuration
 > (n=30, max_depth=25) reduces the footprint by 70% relative to the original model
 > (490 MB → 147 MB) with a loss of only 0.005 in macro F1.
+
+---
+
+## A15/A20 — ONNX Inference Module (CLOSED)
+
+Implementation: `packages/core/src/worker.ts` (merged PR #18)
+
+| Requirement | Implementation | Status |
+|-------------|----------------|--------|
+| Load rf.onnx + if.onnx at startup | `Promise.all([ort.InferenceSession.create(rf.onnx), ort.InferenceSession.create(if.onnx)])` | ✓ |
+| Inference latency < 3ms p95 | p50=0.823ms, p95=1.044ms, p99=1.130ms | PASS |
+| Decision policy per decision-policy.md | `RF_THRESHOLD=0.70`, `IF_THRESHOLD=0.04428754289910031` applied in `middleware.ts` (IF log-only, not in worker.ts) | ✓ |
+| Fail-open on session load failure | `try/catch` around `await sessionsPromise` in the per-request handler replies `{id, error}` instead of crashing; `middleware.ts` also has `worker.on("error")` as a second fail-open layer | ✓ |
+| Feature reduction 72→66 | By name via `EXCLUDED_NAMES` set, mapped to `MODEL_INDICES` against `FEATURE_NAMES` | ✓ |
+| Parallel RF+IF inference | `Promise.all([rfSession.run(...), ifSession.run(...)])` | ✓ |
+| Warmup (dummy inference after load) | **Absent** — confirmed still not implemented | ✗ (not required by acceptance criteria) |
+
+**Latency methodology note:** an initial burst-fire benchmark (100 requests sent without waiting for replies) produced p50=80.6ms / p95=116.6ms — this was a queuing artifact of `worker_threads` message-passing under load, not per-request inference cost (round-trip times grew linearly ~1.3ms/request, consistent with FIFO queuing). Re-measured with serial request/response (200 requests, 20-request warmup discarded, `process.hrtime.bigint()` around each round-trip) to isolate true single-request latency.
+
+Latency: p50=0.823ms, p95=1.044ms, p99=1.130ms (worker round-trip only, not full middleware+extractor path)
+Hardware: node v25.6.0 on Apple Silicon
+
