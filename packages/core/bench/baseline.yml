@@ -1,0 +1,16 @@
+config:
+  target: "http://localhost:3000"
+  phases:
+    - duration: 30
+      arrivalRate: 50
+  defaults:
+    headers:
+      user-agent: "artillery-bench"
+
+scenarios:
+  - name: "mixed GET traffic"
+    flow:
+      - get:
+          url: "/api/users"
+      - get:
+          url: "/api/products?id=123"
