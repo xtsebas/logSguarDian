@@ -178,6 +178,25 @@ No leak: growth over 2000 calls = +1.50 MB. V8 heap stable (~4 MB).
 
 ---
 
+---
+
+## A19 — Latency benchmark (worker_thread feature extraction)
+
+Artillery load test — Express server, 50 arr/s, 30 s, 3 000 HTTP requests per run.  
+Feature extraction runs inside `worker_thread` via `extractFeatureVector()` from `@logsguardian/extractor`.  
+Configs: `packages/core/bench/logsguardian.yml` | Results: `bench-baseline.json`, `bench-mw.json`  
+Environment: Node.js v22.5.1 · Windows 11 (WSL2) · 2026-07-09
+
+| Scenario | p50 (ms) | p95 (ms) | p99 (ms) | max (ms) | requests | failed |
+|---|---|---|---|---|---|---|
+| Baseline (no middleware) | 0 | 1 | 1 | 9 | 3 000 | 0 |
+| + logsguardian (monitor) | 0 | 1 | 1 | 9 | 3 000 | 0 |
+| **Δ p95** | | **0 ms** | | | | |
+
+Criterion: Δp95 ≤ 5 ms → **PASS ✓**
+
+---
+
 ### Thesis — Limitations Paragraph (Section 8.3)
 
 > The model size reduction was motivated by a memory constraint in ONNX Runtime
