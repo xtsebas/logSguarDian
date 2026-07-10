@@ -17,11 +17,10 @@
 import { Worker } from "worker_threads";
 import * as path from "path";
 import type { Request, Response, NextFunction, RequestHandler } from "express";
-import {
-  extractFeatureVector,
-  normalizeCanonicalRequest,
-} from "@logsguardian/extractor";
+import { normalizeCanonicalRequest } from "@logsguardian/extractor";
+import type { CanonicalRequest } from "@logsguardian/extractor";
 import { EventStore } from "./store";
+import { sendWebhook } from "./webhook";
 import type {
   AttackClass,
   DetectionEvent,
@@ -42,8 +41,10 @@ let _requestId = 0;
 
 export function logsguardian(options: MiddlewareOptions = {}): RequestHandler {
   const mode = options.mode ?? "block";
+  const rfThreshold = options.threshold ?? RF_THRESHOLD;
   const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
   const modelDir = options.modelDir ?? DEFAULT_MODEL_DIR;
+  const webhookUrl = options.webhookUrl;
 
   let store: EventStore | null = null;
   try {
@@ -83,7 +84,7 @@ export function logsguardian(options: MiddlewareOptions = {}): RequestHandler {
     worker = null;
   }
 
-  function infer(vector: number[]): Promise<WorkerResponse> {
+  function infer(canonical: CanonicalRequest): Promise<WorkerResponse> {
     return new Promise((resolve) => {
       const id = ++_requestId;
       const timer = setTimeout(() => {
@@ -91,21 +92,16 @@ export function logsguardian(options: MiddlewareOptions = {}): RequestHandler {
         resolve({ id, error: "timeout" });
       }, timeoutMs);
       pending.set(id, { resolve, timer });
-      const req: WorkerRequest = { id, vector };
+      const req: WorkerRequest = { id, canonical };
       worker!.postMessage(req);
     });
   }
 
   function applyPolicy(
     response: WorkerResponse
-  ): { verdict: Verdict; predicted_class: AttackClass; confidence: number; if_score: number } {
+  ): { verdict: Verdict; predicted_class: AttackClass; confidence: number; if_score: number; is_anomaly: boolean } {
     if (response.error || !response.rfProbs || response.ifScore === undefined) {
-      return {
-        verdict: "timeout",
-        predicted_class: "benign",
-        confidence: 0,
-        if_score: 0,
-      };
+      return { verdict: "timeout", predicted_class: "benign", confidence: 0, if_score: 0, is_anomaly: false };
     }
 
     const { rfProbs, ifScore } = response;
@@ -116,7 +112,7 @@ export function logsguardian(options: MiddlewareOptions = {}): RequestHandler {
     const is_anomaly = ifScore < IF_THRESHOLD;
 
     let verdict: Verdict;
-    if (is_attack && confidence >= RF_THRESHOLD) {
+    if (is_attack && confidence >= rfThreshold) {
       verdict = "block";
     } else if (is_anomaly) {
       verdict = "pass_anomaly";
@@ -124,7 +120,7 @@ export function logsguardian(options: MiddlewareOptions = {}): RequestHandler {
       verdict = "pass";
     }
 
-    return { verdict, predicted_class, confidence, if_score: ifScore };
+    return { verdict, predicted_class, confidence, if_score: ifScore, is_anomaly };
   }
 
   return async function logsguardianMiddleware(
@@ -133,12 +129,16 @@ export function logsguardian(options: MiddlewareOptions = {}): RequestHandler {
     next: NextFunction
   ): Promise<void> {
     const t0 = Date.now();
+    const queryString = typeof req.query === "string"
+      ? req.query
+      : new URLSearchParams(req.query as Record<string, string>).toString();
+    const userAgent = (req.headers["user-agent"] as string) ?? "";
 
-    // Extract features
+    // Build CanonicalRequest — feature extraction runs inside the worker thread
     const canonical = normalizeCanonicalRequest({
       method: req.method,
       path: req.path,
-      query: typeof req.query === "string" ? req.query : new URLSearchParams(req.query as Record<string, string>).toString(),
+      query: queryString,
       // req.body is {} by default when no body-parser populates it (truthy but empty).
       // Checking key count avoids treating "{}" as a real body, which would shadow
       // the query string — where SQLi/XSS/PT/CMDi payloads are overwhelmingly delivered.
@@ -147,7 +147,7 @@ export function logsguardian(options: MiddlewareOptions = {}): RequestHandler {
         : (req.body && typeof req.body === "object" && Object.keys(req.body).length > 0
           ? JSON.stringify(req.body)
           : ""),
-      userAgent: (req.headers["user-agent"] as string) ?? "",
+      userAgent,
       contentType: (req.headers["content-type"] as string) ?? "",
       referer: (req.headers["referer"] as string) ?? "",
       cookie: (req.headers["cookie"] as string) ?? "",
@@ -160,28 +160,34 @@ export function logsguardian(options: MiddlewareOptions = {}): RequestHandler {
       ),
     });
 
-    const vector = extractFeatureVector(canonical);
-
-    let result: { verdict: Verdict; predicted_class: AttackClass; confidence: number; if_score: number };
+    let result: { verdict: Verdict; predicted_class: AttackClass; confidence: number; if_score: number; is_anomaly: boolean };
 
     if (!worker) {
-      result = { verdict: "timeout", predicted_class: "benign", confidence: 0, if_score: 0 };
+      result = { verdict: "timeout", predicted_class: "benign", confidence: 0, if_score: 0, is_anomaly: false };
     } else {
-      const workerResp = await infer(vector);
+      const workerResp = await infer(canonical);
       result = applyPolicy(workerResp);
     }
 
+    const needsWebhook = webhookUrl && (result.verdict === "block" || result.verdict === "pass_anomaly");
     const elapsedMs = Date.now() - t0;
+
     const event: DetectionEvent = {
       timestamp: t0,
       method: req.method,
       path: req.path,
+      query_string: queryString,
+      user_agent: userAgent,
       verdict: result.verdict,
       predicted_class: result.predicted_class,
       confidence: result.confidence,
       if_score: result.if_score,
+      is_anomaly: result.is_anomaly,
+      webhook_sent: !!needsWebhook,
       elapsed_ms: elapsedMs,
     };
+
+    if (needsWebhook) sendWebhook(webhookUrl!, event);
 
     if (mode === "block" && result.verdict === "block") {
       try { store?.log(event); } catch { /* non-fatal */ }
