@@ -18,7 +18,6 @@ import { Worker } from "worker_threads";
 import * as path from "path";
 import type { Request, Response, NextFunction, RequestHandler } from "express";
 import { normalizeCanonicalRequest } from "@logsguardian/extractor";
-import type { CanonicalRequest } from "@logsguardian/extractor";
 import { EventStore } from "./store";
 import { sendWebhook } from "./webhook";
 import type {
@@ -84,7 +83,7 @@ export function logsguardian(options: MiddlewareOptions = {}): RequestHandler {
     worker = null;
   }
 
-  function infer(canonical: CanonicalRequest): Promise<WorkerResponse> {
+  function infer(canonical: import("@logsguardian/extractor").CanonicalRequest): Promise<WorkerResponse> {
     return new Promise((resolve) => {
       const id = ++_requestId;
       const timer = setTimeout(() => {
@@ -160,7 +159,7 @@ export function logsguardian(options: MiddlewareOptions = {}): RequestHandler {
       ),
     });
 
-    let result: { verdict: Verdict; predicted_class: AttackClass; confidence: number; if_score: number; is_anomaly: boolean };
+    let result: { verdict: Verdict; predicted_class: AttackClass; confidence: number; if_score: number };
 
     if (!worker) {
       result = { verdict: "timeout", predicted_class: "benign", confidence: 0, if_score: 0, is_anomaly: false };
