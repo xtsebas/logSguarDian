@@ -159,7 +159,7 @@ export function logsguardian(options: MiddlewareOptions = {}): RequestHandler {
       ),
     });
 
-    let result: { verdict: Verdict; predicted_class: AttackClass; confidence: number; if_score: number };
+    let result: { verdict: Verdict; predicted_class: AttackClass; confidence: number; if_score: number; is_anomaly: boolean };
 
     if (!worker) {
       result = { verdict: "timeout", predicted_class: "benign", confidence: 0, if_score: 0, is_anomaly: false };

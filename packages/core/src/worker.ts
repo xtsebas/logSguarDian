@@ -68,8 +68,10 @@ parentPort!.on("message", async (msg: WorkerRequest) => {
     const input66 = Float32Array.from(MODEL_INDICES.map((i) => vector72[i]));
     const tensor = new ort.Tensor("float32", input66, [1, 66]);
 
-    const rfResult = await rfSession.run({ float_input: tensor });
-    const ifResult = await ifSession.run({ float_input: tensor });
+    const [rfResult, ifResult] = await Promise.all([
+      rfSession.run({ float_input: tensor }),
+      ifSession.run({ float_input: tensor }),
+    ]);
 
     const rfProbs = Array.from(
       rfResult[rfSession.outputNames[RF_OUTPUT_IDX]].data as Float32Array
