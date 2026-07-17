@@ -16,6 +16,8 @@ export interface MiddlewareOptions {
   dbPath?: string;
   /** Absolute path to the directory containing rf.onnx, if.onnx, model-metadata.json. */
   modelDir?: string;
+  /** HTTP(S) URL to POST a JSON DetectionEvent when verdict is 'block' or 'pass_anomaly'. */
+  webhookUrl?: string;
 }
 
 /** Single detection event written to the SQLite log. */
@@ -23,10 +25,14 @@ export interface DetectionEvent {
   timestamp: number;
   method: string;
   path: string;
+  query_string: string;
+  user_agent: string;
   verdict: Verdict;
   predicted_class: AttackClass;
   confidence: number;
   if_score: number;
+  is_anomaly: boolean;
+  webhook_sent: boolean;
   elapsed_ms: number;
 }
 
