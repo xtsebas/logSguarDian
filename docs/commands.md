@@ -208,3 +208,39 @@ logSguarDian — Attack Summary
   /api/users (GET)
     HIGH    sqli            1
 ```
+
+---
+
+## endpoints top
+
+Reads the SQLite event log (`dbPath`) and prints a ranking of routes by detected-attack frequency.
+
+```bash
+logsguardian endpoints top
+logsguardian endpoints top --limit 5
+logsguardian endpoints top --format json
+```
+
+| Flag | Values | Default |
+|---|---|---|
+| `--limit` | positive integer | `10` |
+| `--format` | `table`, `json` | `table` |
+
+**What counts as an incident:** any request with `verdict = 'block'` or `verdict = 'pass_anomaly'` — the same set that triggers webhooks (`docs/decision-policy.md` §3.1). `verdict = 'pass'` is not an attack and is excluded.
+
+**Risk score:** `incident_count * avg_confidence` for that route+method, rounded to 2 decimals. Combines frequency (how often the route is hit) with severity (how confident the RF model was on those hits) into one comparable number — it is a simple heuristic, not a statistically validated risk model.
+
+Routes are ranked by `incident_count` descending (ties keep insertion order).
+
+Exits with code 1 if no database file exists at `dbPath`.
+
+**Example output (`table`):**
+
+```
+logSguarDian — Top Endpoints by Attack Frequency
+
+  METHOD  ROUTE           INCIDENTS  RISK SCORE
+  ──────────────────────────────────────────────
+  POST    /api/login      3          2.85
+  GET     /api/users      2          1.60
+```
