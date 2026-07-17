@@ -244,3 +244,48 @@ logSguarDian — Top Endpoints by Attack Frequency
   POST    /api/login      3          2.85
   GET     /api/users      2          1.60
 ```
+
+---
+
+## endpoints profile
+
+Reads the SQLite event log and prints a detailed profile of a single route: attack-type breakdown, hourly distribution of incidents (UTC, 0–23), and source IPs / `/24` ranges.
+
+```bash
+logsguardian endpoints profile <route>
+logsguardian endpoints profile /api/login --method POST
+logsguardian endpoints profile /api/login --format json
+```
+
+| Flag | Values | Default |
+|---|---|---|
+| `--method` | HTTP method, case-insensitive | all methods for the route |
+| `--format` | `table`, `json` | `table` |
+
+Uses the same incident definition as `endpoints top` (`verdict = 'block'` or `'pass_anomaly'`). Source IPs come from `client_ip` on `DetectionEvent`, captured from Express's `req.ip` in the middleware — events logged before this field existed will show an empty `client_ip` and are excluded from the IP/range sections (but still counted in totals and attack types). `/24` ranges are computed by zeroing the last IPv4 octet; non-IPv4 values (e.g. IPv6) pass through as-is, ungrouped.
+
+Exits with code 1 if no route argument is given, or if no database file exists at `dbPath`.
+
+**Example output (`table`):**
+
+```
+logSguarDian — Route Profile: /api/login
+
+  Total incidents: 3 (block: 3, pass_anomaly: 0)
+  Methods: POST (3)
+
+  Attack types:
+    sqli            3
+
+  Hourly distribution (UTC):
+    03:00           2
+    14:00           1
+
+  Top source IPs:
+    203.0.113.5         2
+    198.51.100.20       1
+
+  Source ranges (/24):
+    203.0.113.0/24       2
+    198.51.100.0/24      1
+```
