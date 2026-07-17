@@ -132,6 +132,7 @@ export function logsguardian(options: MiddlewareOptions = {}): RequestHandler {
       ? req.query
       : new URLSearchParams(req.query as Record<string, string>).toString();
     const userAgent = (req.headers["user-agent"] as string) ?? "";
+    const clientIp = req.ip ?? "";
 
     // Build CanonicalRequest — feature extraction runs inside the worker thread
     const canonical = normalizeCanonicalRequest({
@@ -177,6 +178,7 @@ export function logsguardian(options: MiddlewareOptions = {}): RequestHandler {
       path: req.path,
       query_string: queryString,
       user_agent: userAgent,
+      client_ip: clientIp,
       verdict: result.verdict,
       predicted_class: result.predicted_class,
       confidence: result.confidence,

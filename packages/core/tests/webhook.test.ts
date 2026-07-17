@@ -14,6 +14,7 @@ const BLOCK_EVENT: DetectionEvent = {
   path: "/api/users",
   query_string: "id=1' OR '1'='1' UNION SELECT username,password FROM users--",
   user_agent: "Mozilla/5.0 (test)",
+  client_ip: "203.0.113.5",
   verdict: "block",
   predicted_class: "sqli",
   confidence: 0.98,
@@ -87,6 +88,7 @@ describe("sendWebhook — delivery", () => {
       expect(parsed).toHaveProperty("path");
       expect(parsed).toHaveProperty("query_string");
       expect(parsed).toHaveProperty("user_agent");
+      expect(parsed).toHaveProperty("client_ip");
       expect(parsed).toHaveProperty("verdict");
       expect(parsed).toHaveProperty("predicted_class");
       expect(parsed).toHaveProperty("confidence");

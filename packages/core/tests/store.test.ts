@@ -11,6 +11,7 @@ const SAMPLE: DetectionEvent = {
   path: "/api/users",
   query_string: "id=1' OR '1'='1'--",
   user_agent: "Mozilla/5.0 (test)",
+  client_ip: "203.0.113.5",
   verdict: "block",
   predicted_class: "sqli",
   confidence: 0.95,
@@ -48,6 +49,7 @@ describe("EventStore", () => {
     expect(row.path).toBe("/api/users");
     expect(row.query_string).toBe("id=1' OR '1'='1'--");
     expect(row.user_agent).toBe("Mozilla/5.0 (test)");
+    expect(row.client_ip).toBe("203.0.113.5");
     expect(row.verdict).toBe("block");
     expect(row.predicted_class).toBe("sqli");
     expect(row.confidence).toBeCloseTo(0.95);
@@ -120,12 +122,13 @@ describe("EventStore", () => {
     const db = new Database(dbPath, { readonly: true });
     const row = db
       .prepare(
-        "SELECT query_string, user_agent, is_anomaly, webhook_sent FROM detection_events WHERE id = 1"
+        "SELECT query_string, user_agent, client_ip, is_anomaly, webhook_sent FROM detection_events WHERE id = 1"
       )
       .get() as Record<string, unknown>;
     db.close();
     expect(row.query_string).toBe("id=1' OR '1'='1'--");
     expect(row.user_agent).toBe("Mozilla/5.0 (test)");
+    expect(row.client_ip).toBe("203.0.113.5");
     expect(row.is_anomaly).toBe(0);
     expect(row.webhook_sent).toBe(1);
   });
