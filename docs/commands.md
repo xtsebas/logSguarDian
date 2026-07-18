@@ -159,3 +159,52 @@ logSguarDian — Attack Type Catalog
   xss       4            2026-07-18T09:12:05.000Z
   cmdi      1            2026-07-17T22:47:10.000Z
 ```
+
+---
+
+## attacks summary
+
+Reads the SQLite event log and prints the distribution of attack types by endpoint, time period, and severity.
+
+```bash
+logsguardian attacks summary
+logsguardian attacks summary --from 2026-07-01 --to 2026-07-18
+logsguardian attacks summary --endpoint /api/login
+logsguardian attacks summary --format json
+```
+
+| Flag | Values | Default |
+|---|---|---|
+| `--from <date>` | `YYYY-MM-DD` or ISO 8601 | no lower bound |
+| `--to <date>` | `YYYY-MM-DD` or ISO 8601 | no upper bound |
+| `--endpoint <route>` | exact route path | all routes |
+| `--format` | `table`, `json` | `table` |
+
+A `YYYY-MM-DD` value for `--to` is treated as inclusive of the whole day (23:59:59.999 UTC), so `--to 2026-07-18` includes everything on that date. Exits with code 1 if a date is unparseable or if `--from` is after `--to`.
+
+**Same attack-type definition as `attacks list`:** grouped by `predicted_class != 'benign'`, independent of `verdict` — a low-confidence classification that passed through is still counted (at `low` severity, see below).
+
+**Severity is derived from `verdict`**, reusing the existing decision policy (`docs/decision-policy.md` §3.1) instead of a new confidence-bucket scheme:
+
+| Severity | Verdict | Meaning |
+|---|---|---|
+| `high` | `block` | RF confidence crossed `RF_THRESHOLD` — actually blocked |
+| `medium` | `pass_anomaly` | IF flagged the request as statistically anomalous |
+| `low` | `pass` | RF classified an attack type but confidence stayed under threshold |
+
+Rows are grouped by route (path + method), then ordered `high` → `medium` → `low` within each route.
+
+Exits with code 1 if no database file exists at `dbPath`.
+
+**Example output (`table`):**
+
+```
+logSguarDian — Attack Summary
+
+  /api/login (POST)
+    HIGH    sqli            3
+    MEDIUM  xss             1
+    LOW     cmdi            1
+  /api/users (GET)
+    HIGH    sqli            1
+```
