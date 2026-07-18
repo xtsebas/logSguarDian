@@ -126,3 +126,85 @@ logsguardian: configuration has errors:
   - threshold: must be a number in [0, 1], got 2
   - model: must be 'rf', 'if', or 'hybrid', got 'bert'
 ```
+
+---
+
+## attacks list
+
+Reads the SQLite event log and prints the catalog of attack types the model has classified, with total count and last-seen timestamp per type.
+
+```bash
+logsguardian attacks list
+logsguardian attacks list --format json
+```
+
+| Flag | Values | Default |
+|---|---|---|
+| `--format` | `table`, `json` | `table` |
+
+**What counts as an attack type:** grouped by `predicted_class` where it is not `'benign'` — this is independent of `verdict`. A request the RF classified as `sqli` at low confidence (and therefore passed through, never blocked) still counts here: this command catalogs what the model has *seen*, not what got blocked. `'benign'` is excluded since it isn't an attack type. (Contrast with `endpoints top`/`profile`/`report`, which use the incident set `verdict IN ('block', 'pass_anomaly')`.)
+
+Sorted by `total_count` descending. `last_detected` is the event `timestamp` (ms epoch in JSON, ISO 8601 UTC string in the table).
+
+Exits with code 1 if no database file exists at `dbPath`.
+
+**Example output (`table`):**
+
+```
+logSguarDian — Attack Type Catalog
+
+  TYPE      TOTAL COUNT  LAST DETECTED (UTC)
+  ──────────────────────────────────────────
+  sqli      12           2026-07-18T14:03:21.000Z
+  xss       4            2026-07-18T09:12:05.000Z
+  cmdi      1            2026-07-17T22:47:10.000Z
+```
+
+---
+
+## attacks summary
+
+Reads the SQLite event log and prints the distribution of attack types by endpoint, time period, and severity.
+
+```bash
+logsguardian attacks summary
+logsguardian attacks summary --from 2026-07-01 --to 2026-07-18
+logsguardian attacks summary --endpoint /api/login
+logsguardian attacks summary --format json
+```
+
+| Flag | Values | Default |
+|---|---|---|
+| `--from <date>` | `YYYY-MM-DD` or ISO 8601 | no lower bound |
+| `--to <date>` | `YYYY-MM-DD` or ISO 8601 | no upper bound |
+| `--endpoint <route>` | exact route path | all routes |
+| `--format` | `table`, `json` | `table` |
+
+A `YYYY-MM-DD` value for `--to` is treated as inclusive of the whole day (23:59:59.999 UTC), so `--to 2026-07-18` includes everything on that date. Exits with code 1 if a date is unparseable or if `--from` is after `--to`.
+
+**Same attack-type definition as `attacks list`:** grouped by `predicted_class != 'benign'`, independent of `verdict` — a low-confidence classification that passed through is still counted (at `low` severity, see below).
+
+**Severity is derived from `verdict`**, reusing the existing decision policy (`docs/decision-policy.md` §3.1) instead of a new confidence-bucket scheme:
+
+| Severity | Verdict | Meaning |
+|---|---|---|
+| `high` | `block` | RF confidence crossed `RF_THRESHOLD` — actually blocked |
+| `medium` | `pass_anomaly` | IF flagged the request as statistically anomalous |
+| `low` | `pass` | RF classified an attack type but confidence stayed under threshold |
+
+Rows are grouped by route (path + method), then ordered `high` → `medium` → `low` within each route.
+
+Exits with code 1 if no database file exists at `dbPath`.
+
+**Example output (`table`):**
+
+```
+logSguarDian — Attack Summary
+
+  /api/login (POST)
+    HIGH    sqli            3
+    MEDIUM  xss             1
+    LOW     cmdi            1
+  /api/users (GET)
+    HIGH    sqli            1
+```
