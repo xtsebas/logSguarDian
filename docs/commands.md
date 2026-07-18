@@ -126,3 +126,36 @@ logsguardian: configuration has errors:
   - threshold: must be a number in [0, 1], got 2
   - model: must be 'rf', 'if', or 'hybrid', got 'bert'
 ```
+
+---
+
+## attacks list
+
+Reads the SQLite event log and prints the catalog of attack types the model has classified, with total count and last-seen timestamp per type.
+
+```bash
+logsguardian attacks list
+logsguardian attacks list --format json
+```
+
+| Flag | Values | Default |
+|---|---|---|
+| `--format` | `table`, `json` | `table` |
+
+**What counts as an attack type:** grouped by `predicted_class` where it is not `'benign'` — this is independent of `verdict`. A request the RF classified as `sqli` at low confidence (and therefore passed through, never blocked) still counts here: this command catalogs what the model has *seen*, not what got blocked. `'benign'` is excluded since it isn't an attack type. (Contrast with `endpoints top`/`profile`/`report`, which use the incident set `verdict IN ('block', 'pass_anomaly')`.)
+
+Sorted by `total_count` descending. `last_detected` is the event `timestamp` (ms epoch in JSON, ISO 8601 UTC string in the table).
+
+Exits with code 1 if no database file exists at `dbPath`.
+
+**Example output (`table`):**
+
+```
+logSguarDian — Attack Type Catalog
+
+  TYPE      TOTAL COUNT  LAST DETECTED (UTC)
+  ──────────────────────────────────────────
+  sqli      12           2026-07-18T14:03:21.000Z
+  xss       4            2026-07-18T09:12:05.000Z
+  cmdi      1            2026-07-17T22:47:10.000Z
+```

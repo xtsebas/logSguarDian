@@ -13,6 +13,7 @@ import { runConfigInit } from "./cli/config-init";
 import { runConfigShow } from "./cli/config-show";
 import { runConfigSet } from "./cli/config-set";
 import { runConfigValidate } from "./cli/config-validate";
+import { runAttacksList } from "./cli/attacks-list";
 import { requireConfig } from "./cli/guard";
 
 const args = process.argv.slice(2);
@@ -36,6 +37,10 @@ switch (command) {
     runConfigValidate();
     break;
 
+  case "attacks list":
+    runAttacksList(commandArgs);
+    break;
+
   case "":
   case "--help":
   case "-h":
@@ -45,6 +50,7 @@ switch (command) {
     console.log("  config show              Print the active configuration");
     console.log("  config set <key> <value> Modify a config key (threshold, mode, model)");
     console.log("  config validate          Check configuration coherence and model file existence");
+    console.log("  attacks list             List attack types classified, with counts and last seen");
     console.log("\nAll commands except 'config init' require logsguardian.config.js");
     console.log("in the current directory. Run 'logsguardian config init' first.");
     break;
