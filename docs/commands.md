@@ -289,3 +289,48 @@ logSguarDian — Route Profile: /api/login
     203.0.113.0/24       2
     198.51.100.0/24      1
 ```
+
+---
+
+## endpoints report
+
+Exports the full endpoint analysis — every route+method with at least one incident — as JSON or CSV. Meant for scripting/spreadsheets, not terminal reading (no `table` format).
+
+```bash
+logsguardian endpoints report
+logsguardian endpoints report --format csv
+logsguardian endpoints report --format csv --output routes.csv
+```
+
+| Flag | Values | Default |
+|---|---|---|
+| `--format` | `json`, `csv` | `json` |
+| `--output <path>` | file path | stdout |
+
+Uses the same incident definition as `endpoints top`/`endpoints profile` (`verdict = 'block'` or `'pass_anomaly'`). Unlike `endpoints top`, this is not truncated — every route with incidents is included.
+
+**JSON** gives one object per route+method with the full breakdown (`attack_types` as an array, `top_source_ip` as the single most frequent IP for that route).
+
+**CSV** flattens the same data to one row per route+method — arrays don't fit a table, so `attack_types` is serialized as `class:count` pairs joined by `;` (e.g. `sqli:3;xss:1`), and only the single most frequent source IP is kept (`top_source_ip`), not the full IP list.
+
+| CSV column | Meaning |
+|---|---|
+| `path`, `method` | route identity |
+| `incident_count` | total block + pass_anomaly events |
+| `block_count`, `pass_anomaly_count` | breakdown by verdict |
+| `risk_score` | same formula as `endpoints top` |
+| `top_attack_class` | most frequent `predicted_class` for this route |
+| `attack_types` | `class:count` pairs, semicolon-separated |
+| `top_source_ip` | most frequent `client_ip` (empty if none recorded) |
+
+With `--output`, the report is written to that file and stdout only prints a confirmation line (`Wrote N route(s) to <path>`) — it does not also dump the report to the terminal.
+
+Exits with code 1 if `--format` is anything other than `json`/`csv`, or if no database file exists at `dbPath`.
+
+**Example output (`csv`, no `--output`):**
+
+```
+path,method,incident_count,block_count,pass_anomaly_count,risk_score,top_attack_class,attack_types,top_source_ip
+/api/login,POST,3,3,0,2.85,sqli,sqli:2;xss:1,203.0.113.5
+/api/users,GET,2,2,0,1.60,cmdi,cmdi:2,9.9.9.9
+```

@@ -17,6 +17,7 @@ import { runAttacksList } from "./cli/attacks-list";
 import { runAttacksSummary } from "./cli/attacks-summary";
 import { runEndpointsTop } from "./cli/endpoints-top";
 import { runEndpointsProfile } from "./cli/endpoints-profile";
+import { runEndpointsReport } from "./cli/endpoints-report";
 import { requireConfig } from "./cli/guard";
 
 const args = process.argv.slice(2);
@@ -56,6 +57,10 @@ switch (command) {
     runEndpointsProfile(commandArgs);
     break;
 
+  case "endpoints report":
+    runEndpointsReport(commandArgs);
+    break;
+
   case "":
   case "--help":
   case "-h":
@@ -70,6 +75,7 @@ switch (command) {
     console.log("  endpoints top            Rank routes by detected attack frequency and risk score");
     console.log("  endpoints profile <route> Detailed profile of one route: attack types, hourly");
     console.log("                           distribution, and source IPs/ranges");
+    console.log("  endpoints report         Export the full endpoint analysis as JSON or CSV");
     console.log("\nAll commands except 'config init' require logsguardian.config.js");
     console.log("in the current directory. Run 'logsguardian config init' first.");
     break;
