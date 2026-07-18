@@ -24,6 +24,7 @@ const BASE: DetectionEvent = {
   path: "/api/users",
   query_string: "",
   user_agent: "test-agent",
+  client_ip: "203.0.113.5",
   verdict: "block",
   predicted_class: "sqli",
   confidence: 0.9,
