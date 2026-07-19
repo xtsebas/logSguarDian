@@ -334,3 +334,48 @@ path,method,incident_count,block_count,pass_anomaly_count,risk_score,top_attack_
 /api/login,POST,3,3,0,2.85,sqli,sqli:2;xss:1,203.0.113.5
 /api/users,GET,2,2,0,1.60,cmdi,cmdi:2,9.9.9.9
 ```
+
+---
+
+## webhooks add
+
+Registers a webhook destination in the SQLite store. The URL must be HTTPS.
+
+```bash
+logsguardian webhooks add <url>
+```
+
+Validates the URL in two steps: first that it's syntactically valid, then that its scheme is `https:`. On success, stores `id` (auto-generated), `url`, `created_at` (epoch ms), and `status` (`active`) in a `webhooks` table, and prints the assigned id.
+
+**Unlike the read commands** (`endpoints top/profile/report`, `attacks list/summary`), this command does not require `dbPath` to already exist — it creates the database file (and the `webhooks` table) on first use, the same way `config init` gets a project going from nothing.
+
+Exits with code 1 if no URL is given, if the URL is not parseable, or if its scheme is not `https:`.
+
+**Example:**
+
+```
+$ logsguardian webhooks add https://hooks.slack.com/services/T00/B00/XXX
+Registered webhook #1: https://hooks.slack.com/services/T00/B00/XXX
+```
+
+---
+
+## webhooks remove
+
+Removes a webhook by ID from the SQLite store.
+
+```bash
+logsguardian webhooks remove <id>
+```
+
+`<id>` must be a plain integer (no decimals, no non-numeric characters). Exits with code 1 with a clear error if the ID doesn't exist, or if the argument isn't a valid integer.
+
+**Example:**
+
+```
+$ logsguardian webhooks remove 1
+Removed webhook #1
+
+$ logsguardian webhooks remove 1
+logsguardian: webhook #1 not found
+```
