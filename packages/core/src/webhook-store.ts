@@ -45,6 +45,12 @@ export class WebhookStore {
     return Number(result.lastInsertRowid);
   }
 
+  /** Deletes a webhook by id. Returns true if a row was removed, false if the id did not exist. */
+  remove(id: number): boolean {
+    const result = this.db.prepare(`DELETE FROM webhooks WHERE id = @id`).run({ id });
+    return result.changes > 0;
+  }
+
   close(): void {
     this.db.close();
   }

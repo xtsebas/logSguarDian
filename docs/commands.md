@@ -357,3 +357,25 @@ Exits with code 1 if no URL is given, if the URL is not parseable, or if its sch
 $ logsguardian webhooks add https://hooks.slack.com/services/T00/B00/XXX
 Registered webhook #1: https://hooks.slack.com/services/T00/B00/XXX
 ```
+
+---
+
+## webhooks remove
+
+Removes a webhook by ID from the SQLite store.
+
+```bash
+logsguardian webhooks remove <id>
+```
+
+`<id>` must be a plain integer (no decimals, no non-numeric characters). Exits with code 1 with a clear error if the ID doesn't exist, or if the argument isn't a valid integer.
+
+**Example:**
+
+```
+$ logsguardian webhooks remove 1
+Removed webhook #1
+
+$ logsguardian webhooks remove 1
+logsguardian: webhook #1 not found
+```
