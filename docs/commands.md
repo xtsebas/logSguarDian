@@ -208,3 +208,129 @@ logSguarDian — Attack Summary
   /api/users (GET)
     HIGH    sqli            1
 ```
+
+---
+
+## endpoints top
+
+Reads the SQLite event log (`dbPath`) and prints a ranking of routes by detected-attack frequency.
+
+```bash
+logsguardian endpoints top
+logsguardian endpoints top --limit 5
+logsguardian endpoints top --format json
+```
+
+| Flag | Values | Default |
+|---|---|---|
+| `--limit` | positive integer | `10` |
+| `--format` | `table`, `json` | `table` |
+
+**What counts as an incident:** any request with `verdict = 'block'` or `verdict = 'pass_anomaly'` — the same set that triggers webhooks (`docs/decision-policy.md` §3.1). `verdict = 'pass'` is not an attack and is excluded.
+
+**Risk score:** `incident_count * avg_confidence` for that route+method, rounded to 2 decimals. Combines frequency (how often the route is hit) with severity (how confident the RF model was on those hits) into one comparable number — it is a simple heuristic, not a statistically validated risk model.
+
+Routes are ranked by `incident_count` descending (ties keep insertion order).
+
+Exits with code 1 if no database file exists at `dbPath`.
+
+**Example output (`table`):**
+
+```
+logSguarDian — Top Endpoints by Attack Frequency
+
+  METHOD  ROUTE           INCIDENTS  RISK SCORE
+  ──────────────────────────────────────────────
+  POST    /api/login      3          2.85
+  GET     /api/users      2          1.60
+```
+
+---
+
+## endpoints profile
+
+Reads the SQLite event log and prints a detailed profile of a single route: attack-type breakdown, hourly distribution of incidents (UTC, 0–23), and source IPs / `/24` ranges.
+
+```bash
+logsguardian endpoints profile <route>
+logsguardian endpoints profile /api/login --method POST
+logsguardian endpoints profile /api/login --format json
+```
+
+| Flag | Values | Default |
+|---|---|---|
+| `--method` | HTTP method, case-insensitive | all methods for the route |
+| `--format` | `table`, `json` | `table` |
+
+Uses the same incident definition as `endpoints top` (`verdict = 'block'` or `'pass_anomaly'`). Source IPs come from `client_ip` on `DetectionEvent`, captured from Express's `req.ip` in the middleware — events logged before this field existed will show an empty `client_ip` and are excluded from the IP/range sections (but still counted in totals and attack types). `/24` ranges are computed by zeroing the last IPv4 octet; non-IPv4 values (e.g. IPv6) pass through as-is, ungrouped.
+
+Exits with code 1 if no route argument is given, or if no database file exists at `dbPath`.
+
+**Example output (`table`):**
+
+```
+logSguarDian — Route Profile: /api/login
+
+  Total incidents: 3 (block: 3, pass_anomaly: 0)
+  Methods: POST (3)
+
+  Attack types:
+    sqli            3
+
+  Hourly distribution (UTC):
+    03:00           2
+    14:00           1
+
+  Top source IPs:
+    203.0.113.5         2
+    198.51.100.20       1
+
+  Source ranges (/24):
+    203.0.113.0/24       2
+    198.51.100.0/24      1
+```
+
+---
+
+## endpoints report
+
+Exports the full endpoint analysis — every route+method with at least one incident — as JSON or CSV. Meant for scripting/spreadsheets, not terminal reading (no `table` format).
+
+```bash
+logsguardian endpoints report
+logsguardian endpoints report --format csv
+logsguardian endpoints report --format csv --output routes.csv
+```
+
+| Flag | Values | Default |
+|---|---|---|
+| `--format` | `json`, `csv` | `json` |
+| `--output <path>` | file path | stdout |
+
+Uses the same incident definition as `endpoints top`/`endpoints profile` (`verdict = 'block'` or `'pass_anomaly'`). Unlike `endpoints top`, this is not truncated — every route with incidents is included.
+
+**JSON** gives one object per route+method with the full breakdown (`attack_types` as an array, `top_source_ip` as the single most frequent IP for that route).
+
+**CSV** flattens the same data to one row per route+method — arrays don't fit a table, so `attack_types` is serialized as `class:count` pairs joined by `;` (e.g. `sqli:3;xss:1`), and only the single most frequent source IP is kept (`top_source_ip`), not the full IP list.
+
+| CSV column | Meaning |
+|---|---|
+| `path`, `method` | route identity |
+| `incident_count` | total block + pass_anomaly events |
+| `block_count`, `pass_anomaly_count` | breakdown by verdict |
+| `risk_score` | same formula as `endpoints top` |
+| `top_attack_class` | most frequent `predicted_class` for this route |
+| `attack_types` | `class:count` pairs, semicolon-separated |
+| `top_source_ip` | most frequent `client_ip` (empty if none recorded) |
+
+With `--output`, the report is written to that file and stdout only prints a confirmation line (`Wrote N route(s) to <path>`) — it does not also dump the report to the terminal.
+
+Exits with code 1 if `--format` is anything other than `json`/`csv`, or if no database file exists at `dbPath`.
+
+**Example output (`csv`, no `--output`):**
+
+```
+path,method,incident_count,block_count,pass_anomaly_count,risk_score,top_attack_class,attack_types,top_source_ip
+/api/login,POST,3,3,0,2.85,sqli,sqli:2;xss:1,203.0.113.5
+/api/users,GET,2,2,0,1.60,cmdi,cmdi:2,9.9.9.9
+```

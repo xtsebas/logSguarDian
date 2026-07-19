@@ -19,6 +19,7 @@ const CREATE_TABLE_SQL = `
     path            TEXT    NOT NULL,
     query_string    TEXT    NOT NULL DEFAULT '',
     user_agent      TEXT    NOT NULL DEFAULT '',
+    client_ip       TEXT    NOT NULL DEFAULT '',
     verdict         TEXT    NOT NULL,
     predicted_class TEXT    NOT NULL,
     confidence      REAL    NOT NULL,
@@ -35,6 +36,7 @@ const MIGRATIONS: string[] = [
   `ALTER TABLE detection_events ADD COLUMN user_agent   TEXT NOT NULL DEFAULT ''`,
   `ALTER TABLE detection_events ADD COLUMN is_anomaly   INTEGER NOT NULL DEFAULT 0`,
   `ALTER TABLE detection_events ADD COLUMN webhook_sent INTEGER NOT NULL DEFAULT 0`,
+  `ALTER TABLE detection_events ADD COLUMN client_ip    TEXT NOT NULL DEFAULT ''`,
 ];
 
 export class EventStore {
@@ -49,11 +51,11 @@ export class EventStore {
     }
     this.insert = this.db.prepare(`
       INSERT INTO detection_events
-        (timestamp, method, path, query_string, user_agent,
+        (timestamp, method, path, query_string, user_agent, client_ip,
          verdict, predicted_class, confidence, if_score,
          is_anomaly, webhook_sent, elapsed_ms)
       VALUES
-        (@timestamp, @method, @path, @query_string, @user_agent,
+        (@timestamp, @method, @path, @query_string, @user_agent, @client_ip,
          @verdict, @predicted_class, @confidence, @if_score,
          @is_anomaly, @webhook_sent, @elapsed_ms)
     `);

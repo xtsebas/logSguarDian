@@ -13,6 +13,7 @@ import * as net from "net";
 import * as fs from "fs";
 import * as os from "os";
 import * as path from "path";
+import Database from "better-sqlite3";
 import express from "express";
 import type { Application } from "express";
 import type { WorkerRequest, WorkerResponse } from "../src/types";
@@ -168,6 +169,26 @@ describe("logsguardian — custom threshold", () => {
 
     const { status } = await httpGet(app, "/");
     expect(status).toBe(200);
+  });
+});
+
+describe("logsguardian — client_ip capture", () => {
+  test("persists the requester's IP on the logged DetectionEvent", async () => {
+    const dbPath = tmpDb();
+    const app = makeApp({ mode: "block", threshold: 0.70, timeoutMs: 500, dbPath });
+    mockResponse(SQLI_HIGH, IF_NORMAL);
+
+    await httpGet(app, "/?id=1 OR 1=1");
+    await new Promise((r) => setTimeout(r, 100)); // allow async store.log() to flush
+
+    const db = new Database(dbPath, { readonly: true });
+    const row = db.prepare("SELECT client_ip FROM detection_events WHERE id = 1").get() as
+      | { client_ip: string }
+      | undefined;
+    db.close();
+
+    expect(row?.client_ip).toBeTruthy();
+    expect(row?.client_ip).toMatch(/127\.0\.0\.1|::1|::ffff:127\.0\.0\.1/);
   });
 });
 

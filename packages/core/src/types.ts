@@ -27,6 +27,7 @@ export interface DetectionEvent {
   path: string;
   query_string: string;
   user_agent: string;
+  client_ip: string;
   verdict: Verdict;
   predicted_class: AttackClass;
   confidence: number;
