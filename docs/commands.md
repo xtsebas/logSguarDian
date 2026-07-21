@@ -379,3 +379,52 @@ Removed webhook #1
 $ logsguardian webhooks remove 1
 logsguardian: webhook #1 not found
 ```
+
+---
+
+## webhooks test
+
+Sends a synthetic test payload to a registered webhook and reports the HTTP response, without needing a real detection to trigger one.
+
+```bash
+logsguardian webhooks test <id>
+```
+
+`<id>` must be a plain integer (same validation as `webhooks remove`: no decimals, no leading zeros, no non-numeric characters). Exits with code 1 if the argument is missing, not a valid integer, or if no webhook with that id exists in the store.
+
+**Test payload:** identical shape to a real `DetectionEvent` (same fields `sendWebhook()` sends from the middleware) — `verdict: 'block'`, `predicted_class: 'sqli'`, `confidence: 0.99`, a synthetic path (`/logsguardian-test`) and IP (`127.0.0.1`), and a fresh `timestamp`. This exercises the exact code path a real detection would use, so a successful test is a reliable signal the destination is reachable and accepts the payload shape.
+
+**HTTP status is always shown**, including 4xx/5xx — a non-2xx response is a valid result, not a failure of the command itself, and exits 0. Only a genuine network error (unreachable host, timeout, malformed URL) is treated as a command failure and exits 1 with "No response received."
+
+**Example — success:**
+
+```
+$ logsguardian webhooks test 1
+Sending test payload to webhook #1: https://hooks.slack.com/services/T00/B00/XXX
+Response: HTTP 200
+Webhook delivered successfully.
+```
+
+**Example — non-2xx response (still exit 0):**
+
+```
+$ logsguardian webhooks test 1
+Sending test payload to webhook #1: https://example.com/broken-hook
+Response: HTTP 500
+Webhook endpoint returned a non-2xx status.
+```
+
+**Example — unreachable (exit 1):**
+
+```
+$ logsguardian webhooks test 1
+Sending test payload to webhook #1: https://example.com/broken-hook
+No response received (network error or timeout).
+```
+
+**Example — unknown id (exit 1):**
+
+```
+$ logsguardian webhooks test 999
+logsguardian: webhook #999 not found
+```

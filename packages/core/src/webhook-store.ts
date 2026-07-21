@@ -51,6 +51,13 @@ export class WebhookStore {
     return result.changes > 0;
   }
 
+  /** Fetches a single webhook by id, or undefined if it doesn't exist. */
+  getById(id: number): WebhookRecord | undefined {
+    return this.db.prepare(`SELECT id, url, created_at, status FROM webhooks WHERE id = ?`).get(id) as
+      | WebhookRecord
+      | undefined;
+  }
+
   close(): void {
     this.db.close();
   }

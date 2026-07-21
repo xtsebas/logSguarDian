@@ -3,38 +3,48 @@
  *
  * Sends a single HTTP(S) POST with the DetectionEvent as JSON body.
  * Any error (unreachable host, timeout, malformed URL) is swallowed silently —
- * webhook failures must never affect the host application.
+ * webhook failures must never affect the host application. Resolves with the
+ * response status code (or null on error/timeout) for callers that want it
+ * (e.g. `webhooks test`); the middleware call site never awaits this, so
+ * fire-and-forget behavior is unchanged.
  */
 import * as http from "http";
 import * as https from "https";
 import type { DetectionEvent } from "./types";
 
-export function sendWebhook(url: string, event: DetectionEvent): void {
-  try {
-    const body = JSON.stringify(event);
-    const parsed = new URL(url);
-    const transport = parsed.protocol === "https:" ? https : http;
-    const options: http.RequestOptions = {
-      hostname: parsed.hostname,
-      port: parsed.port || (parsed.protocol === "https:" ? 443 : 80),
-      path: parsed.pathname + parsed.search,
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "Content-Length": Buffer.byteLength(body),
-        "User-Agent": "logsguardian/0.1.0",
-      },
-    };
+export function sendWebhook(url: string, event: DetectionEvent): Promise<number | null> {
+  return new Promise((resolve) => {
+    try {
+      const body = JSON.stringify(event);
+      const parsed = new URL(url);
+      const transport = parsed.protocol === "https:" ? https : http;
+      const options: http.RequestOptions = {
+        hostname: parsed.hostname,
+        port: parsed.port || (parsed.protocol === "https:" ? 443 : 80),
+        path: parsed.pathname + parsed.search,
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Content-Length": Buffer.byteLength(body),
+          "User-Agent": "logsguardian/0.1.0",
+        },
+      };
 
-    const req = transport.request(options, (res) => {
-      res.resume(); // drain body — we don't read the response
-    });
+      const req = transport.request(options, (res) => {
+        res.resume(); // drain body — we don't read the response
+        resolve(res.statusCode ?? null);
+      });
 
-    req.on("error", () => { /* silent fail */ });
-    req.setTimeout(3000, () => req.destroy());
-    req.write(body);
-    req.end();
-  } catch {
-    // malformed URL or any synchronous error — silent fail
-  }
+      req.on("error", () => resolve(null)); // silent fail
+      req.setTimeout(3000, () => {
+        req.destroy();
+        resolve(null);
+      });
+      req.write(body);
+      req.end();
+    } catch {
+      // malformed URL or any synchronous error — silent fail
+      resolve(null);
+    }
+  });
 }
