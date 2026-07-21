@@ -15,6 +15,7 @@ import { runConfigSet } from "./cli/config-set";
 import { runConfigValidate } from "./cli/config-validate";
 import { runAttacksList } from "./cli/attacks-list";
 import { runAttacksSummary } from "./cli/attacks-summary";
+import { runAttacksInspect } from "./cli/attacks-inspect";
 import { runEndpointsTop } from "./cli/endpoints-top";
 import { runEndpointsProfile } from "./cli/endpoints-profile";
 import { runEndpointsReport } from "./cli/endpoints-report";
@@ -51,6 +52,10 @@ switch (command) {
     runAttacksSummary(commandArgs);
     break;
 
+  case "attacks inspect":
+    runAttacksInspect(commandArgs);
+    break;
+
   case "endpoints top":
     runEndpointsTop(commandArgs);
     break;
@@ -82,6 +87,7 @@ switch (command) {
     console.log("  config validate          Check configuration coherence and model file existence");
     console.log("  attacks list             List attack types classified, with counts and last seen");
     console.log("  attacks summary          Attack type distribution by endpoint, period, and severity");
+    console.log("  attacks inspect <type>   Detection rate, top features, and payload examples for one type");
     console.log("  endpoints top            Rank routes by detected attack frequency and risk score");
     console.log("  endpoints profile <route> Detailed profile of one route: attack types, hourly");
     console.log("                           distribution, and source IPs/ranges");

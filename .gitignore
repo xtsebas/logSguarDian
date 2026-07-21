@@ -1,5 +1,11 @@
 # data
-data/
+/data/
+
+# packages/core bundles class_metrics.json + feature_importance.json from
+# training/models/ at build time (postbuild script) — ship them in the package
+!packages/core/data/
+!packages/core/data/class_metrics.json
+!packages/core/data/feature_importance.json
 
 # Claude
 .claude/
