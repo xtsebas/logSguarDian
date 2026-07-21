@@ -231,3 +231,26 @@ Implementation: `packages/core/src/worker.ts` (merged PR #18)
 Latency: p50=0.823ms, p95=1.044ms, p99=1.130ms (worker round-trip only, not full middleware+extractor path)
 Hardware: node v25.6.0 on Apple Silicon
 
+---
+
+## F1.8 — Extractor Benchmark (CLOSED)
+
+Implementation: `benchmarks/extractor.bench.js`
+
+| Fixture | p50 (ms) | p95 (ms) | p99 (ms) | Throughput (req/s) |
+|---------|---------:|---------:|---------:|--------------------:|
+| benign | 0.0067 | 0.0092 | 0.0326 | 132,602 |
+| sqli | 0.0058 | 0.0065 | 0.0276 | 158,356 |
+| xss | 0.0063 | 0.0083 | 0.0265 | 144,689 |
+| path_traversal | 0.0044 | 0.0061 | 0.0226 | 200,739 |
+| cmdi | 0.0055 | 0.0073 | 0.0250 | 164,435 |
+| **mixed (round-robin)** | **0.0059** | **0.0082** | **0.0261** | **156,924** |
+
+**GATE p95 ≤ 1ms: PASS ✓** (mixed-traffic p95 = 0.0082ms — roughly 120× under the 1ms threshold)
+
+Methodology: serial measurement (not burst-fire), 200-iteration warmup discarded, 2000 iterations per fixture, `process.hrtime.bigint()` resolution. Fixtures cover all 5 output classes (benign, sqli, xss, path_traversal, cmdi); `body` is passed as a JSON-stringified string (not an object), matching how `middleware.ts` builds the `CanonicalRequest` before calling the extractor.
+
+Hardware: Node v25.6.0 on darwin/arm64 (Apple Silicon)
+
+Note: this benchmark measures `extractFeatureVector()` in the main thread. In production, extraction runs inside the `worker_thread` (see A15/A20 above) — main-thread latency is therefore not directly on the critical path, but serves as the reference for F1.8 and the baseline for the full middleware benchmark (A19 above, F6).
+
