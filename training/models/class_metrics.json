@@ -1,0 +1,35 @@
+{
+  "model": "rf_v2",
+  "n_estimators": 30,
+  "max_depth": 25,
+  "eval_set": "test",
+  "eval_note": "Official locked test-set numbers (R2 one-time read, 2026-06-20) — docs/decision-policy.md §2.1. Test set read exactly once; no retraining after observing these numbers.",
+  "classes": {
+    "sqli": {
+      "f1": 0.9950,
+      "precision": 0.9949,
+      "recall": 0.9951
+    },
+    "xss": {
+      "f1": 0.9839,
+      "precision": 0.9907,
+      "recall": 0.9771
+    },
+    "path_traversal": {
+      "f1": 0.9666,
+      "precision": 0.9697,
+      "recall": 0.9636
+    },
+    "cmdi": {
+      "f1": 0.8865,
+      "precision": 0.8623,
+      "recall": 0.9122
+    },
+    "benign": {
+      "f1": 0.9986,
+      "precision": 0.9980,
+      "recall": 0.9992
+    }
+  },
+  "macro_f1": 0.9661
+}
