@@ -21,6 +21,7 @@ import { runEndpointsProfile } from "./cli/endpoints-profile";
 import { runEndpointsReport } from "./cli/endpoints-report";
 import { runWebhooksAdd } from "./cli/webhooks-add";
 import { runWebhooksRemove } from "./cli/webhooks-remove";
+import { runWebhooksList } from "./cli/webhooks-list";
 import { requireConfig } from "./cli/guard";
 
 const args = process.argv.slice(2);
@@ -76,6 +77,10 @@ switch (command) {
     runWebhooksRemove(commandArgs);
     break;
 
+  case "webhooks list":
+    runWebhooksList(commandArgs);
+    break;
+
   case "":
   case "--help":
   case "-h":
@@ -94,6 +99,7 @@ switch (command) {
     console.log("  endpoints report         Export the full endpoint analysis as JSON or CSV");
     console.log("  webhooks add <url>       Register a webhook destination (HTTPS only)");
     console.log("  webhooks remove <id>     Remove a webhook by ID");
+    console.log("  webhooks list            List registered webhooks");
     console.log("\nAll commands except 'config init' require logsguardian.config.js");
     console.log("in the current directory. Run 'logsguardian config init' first.");
     break;

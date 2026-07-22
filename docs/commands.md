@@ -429,3 +429,60 @@ Removed webhook #1
 $ logsguardian webhooks remove 1
 logsguardian: webhook #1 not found
 ```
+
+---
+
+## webhooks list
+
+Lists all registered webhook destinations from the SQLite store.
+
+```bash
+logsguardian webhooks list
+logsguardian webhooks list --format json
+```
+
+| Flag | Values | Default |
+|---|---|---|
+| `--format` | `table`, `json` | `table` |
+
+**Output columns:** `ID`, `STATUS`, `CREATED` (UTC), `URL` — reflects the store exactly, with no filtering or truncation, ordered by `id` ascending. `status` is shown as-is from the store (currently always `active`; other values will appear once webhook testing/disabling lands). `created_at` is rendered as `YYYY-MM-DD HH:MM:SS UTC` in the table and as a full ISO 8601 UTC string in JSON.
+
+**Same auto-create behavior as `webhooks add`/`webhooks remove`:** does not require `dbPath` to already exist — opens (creating if needed) via `WebhookStore`, same as the rest of the `webhooks` group. An empty or missing store is not an error: it prints a friendly message and exits 0.
+
+**Example — empty store:**
+
+```
+$ logsguardian webhooks list
+
+logSguarDian — Registered Webhooks
+
+  No webhooks registered.
+  Run 'logsguardian webhooks add <url>' to register one.
+```
+
+**Example (`table`):**
+
+```
+$ logsguardian webhooks add https://hooks.slack.com/services/T00/B00/XXX
+Registered webhook #1: https://hooks.slack.com/services/T00/B00/XXX
+$ logsguardian webhooks list
+
+logSguarDian — Registered Webhooks
+
+  ID    STATUS    CREATED                  URL
+  ─────────────────────────────────────────────────────────────
+  1     active    2026-07-21 03:00:19 UTC  https://hooks.slack.com/services/T00/B00/XXX
+```
+
+**Example (`json`):**
+
+```json
+[
+  {
+    "id": 1,
+    "url": "https://hooks.slack.com/services/T00/B00/XXX",
+    "created_at": "2026-07-21T03:00:19.239Z",
+    "status": "active"
+  }
+]
+```
