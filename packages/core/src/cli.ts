@@ -21,6 +21,7 @@ import { runEndpointsProfile } from "./cli/endpoints-profile";
 import { runEndpointsReport } from "./cli/endpoints-report";
 import { runWebhooksAdd } from "./cli/webhooks-add";
 import { runWebhooksRemove } from "./cli/webhooks-remove";
+import { runWebhooksTest } from "./cli/webhooks-test";
 import { runWebhooksList } from "./cli/webhooks-list";
 import { requireConfig } from "./cli/guard";
 
@@ -77,6 +78,12 @@ switch (command) {
     runWebhooksRemove(commandArgs);
     break;
 
+  case "webhooks test":
+    runWebhooksTest(commandArgs).catch((err) => {
+      console.error(`logsguardian: failed to send test webhook — ${(err as Error).message}`);
+      process.exit(1);
+    });
+    
   case "webhooks list":
     runWebhooksList(commandArgs);
     break;
@@ -99,6 +106,7 @@ switch (command) {
     console.log("  endpoints report         Export the full endpoint analysis as JSON or CSV");
     console.log("  webhooks add <url>       Register a webhook destination (HTTPS only)");
     console.log("  webhooks remove <id>     Remove a webhook by ID");
+    console.log("  webhooks test <id>       Send a test payload to a registered webhook and show the HTTP response");
     console.log("  webhooks list            List registered webhooks");
     console.log("\nAll commands except 'config init' require logsguardian.config.js");
     console.log("in the current directory. Run 'logsguardian config init' first.");
