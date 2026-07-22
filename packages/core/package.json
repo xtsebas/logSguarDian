@@ -10,13 +10,15 @@
   },
   "files": [
     "dist",
-    "models"
+    "models",
+    "data"
   ],
   "engines": {
     "node": ">=20"
   },
   "scripts": {
     "build": "tsc -p tsconfig.json",
+    "postbuild": "cp ../../training/models/class_metrics.json data/ && cp ../../training/models/feature_importance.json data/",
     "test": "jest"
   },
   "dependencies": {

@@ -56,6 +56,10 @@ export class WebhookStore {
     return this.db.prepare(`SELECT id, url, created_at, status FROM webhooks WHERE id = ?`).get(id) as
       | WebhookRecord
       | undefined;
+    
+  /** Returns all registered webhooks, ordered by id ascending. */
+  list(): WebhookRecord[] {
+    return this.db.prepare(`SELECT id, url, created_at, status FROM webhooks ORDER BY id ASC`).all() as WebhookRecord[];
   }
 
   close(): void {

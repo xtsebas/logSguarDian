@@ -15,12 +15,14 @@ import { runConfigSet } from "./cli/config-set";
 import { runConfigValidate } from "./cli/config-validate";
 import { runAttacksList } from "./cli/attacks-list";
 import { runAttacksSummary } from "./cli/attacks-summary";
+import { runAttacksInspect } from "./cli/attacks-inspect";
 import { runEndpointsTop } from "./cli/endpoints-top";
 import { runEndpointsProfile } from "./cli/endpoints-profile";
 import { runEndpointsReport } from "./cli/endpoints-report";
 import { runWebhooksAdd } from "./cli/webhooks-add";
 import { runWebhooksRemove } from "./cli/webhooks-remove";
 import { runWebhooksTest } from "./cli/webhooks-test";
+import { runWebhooksList } from "./cli/webhooks-list";
 import { requireConfig } from "./cli/guard";
 
 const args = process.argv.slice(2);
@@ -52,6 +54,10 @@ switch (command) {
     runAttacksSummary(commandArgs);
     break;
 
+  case "attacks inspect":
+    runAttacksInspect(commandArgs);
+    break;
+
   case "endpoints top":
     runEndpointsTop(commandArgs);
     break;
@@ -77,6 +83,9 @@ switch (command) {
       console.error(`logsguardian: failed to send test webhook — ${(err as Error).message}`);
       process.exit(1);
     });
+    
+  case "webhooks list":
+    runWebhooksList(commandArgs);
     break;
 
   case "":
@@ -90,6 +99,7 @@ switch (command) {
     console.log("  config validate          Check configuration coherence and model file existence");
     console.log("  attacks list             List attack types classified, with counts and last seen");
     console.log("  attacks summary          Attack type distribution by endpoint, period, and severity");
+    console.log("  attacks inspect <type>   Detection rate, top features, and payload examples for one type");
     console.log("  endpoints top            Rank routes by detected attack frequency and risk score");
     console.log("  endpoints profile <route> Detailed profile of one route: attack types, hourly");
     console.log("                           distribution, and source IPs/ranges");
@@ -97,6 +107,7 @@ switch (command) {
     console.log("  webhooks add <url>       Register a webhook destination (HTTPS only)");
     console.log("  webhooks remove <id>     Remove a webhook by ID");
     console.log("  webhooks test <id>       Send a test payload to a registered webhook and show the HTTP response");
+    console.log("  webhooks list            List registered webhooks");
     console.log("\nAll commands except 'config init' require logsguardian.config.js");
     console.log("in the current directory. Run 'logsguardian config init' first.");
     break;
