@@ -103,8 +103,8 @@ RussellMitchell intranet Apache logs, CAPEC multi-label payloads, etc.).
   `rf_max_prob_diff: 9.81e-8`, `if_max_score_diff: 2.38e-7`,
   `rf_onnx_output_index: 1`, `if_onnx_output_index: 1`. (rf_v3/if_v2 generation.)
 - `models/if_v2_metadata.json` — Isolation Forest operating point:
-  `threshold: 0.0445`, `contamination: 0.05`, trained on benign-only data,
-  `val_recall: 0.6645`, `val_fp_rate: 0.0996`.
+  `threshold: 0.02901575`, `contamination: 0.05`, trained on benign-only data,
+  `val_recall: 0.5596`, `val_fp_rate: 0.0800`.
 - `parsers/parse_*.py` + `validate_canonical.py` — **legacy**. These predate
   `data_manager/02_feature_engineering.ipynb` and are not invoked by any
   current notebook or script. They should be removed or explicitly archived

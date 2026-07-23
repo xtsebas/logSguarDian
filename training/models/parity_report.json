@@ -7,7 +7,7 @@
   "rf_max_prob_diff": 9.814926549278624e-08,
   "if_max_score_diff": 2.3823395389754864e-07,
   "parity_passed": true,
-  "threshold_if": 0.044498153738474766,
+  "threshold_if": 0.02901575,
   "if_onnx_output_index": 1,
   "rf_onnx_output_index": 1,
   "rf_classes": [

@@ -11,11 +11,11 @@
     "n_features": 66,
     "target_opset": 17,
     "onnx_output_index": 1,
-    "threshold": 0.044498153738474766,
+    "threshold": 0.02901575,
     "contamination": 0.05,
     "trained_on": "benign_only",
-    "val_recall": 0.6645,
-    "val_fp_rate": 0.0996
+    "val_recall": 0.5596,
+    "val_fp_rate": 0.0800
   },
   "parity": {
     "parity_passed": true,

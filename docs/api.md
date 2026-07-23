@@ -155,7 +155,7 @@ The middleware applies this policy on every inference result (source: `docs/deci
 ```
 rf_classes     = ['benign', 'cmdi', 'path_traversal', 'sqli', 'xss']
 RF_THRESHOLD   = 0.35
-IF_THRESHOLD   = 0.044498153738474766
+IF_THRESHOLD   = 0.02901575
 
 predicted_class = rf_classes[argmax(rf_probs)]
 confidence      = max(rf_probs)

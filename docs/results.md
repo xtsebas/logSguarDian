@@ -49,14 +49,32 @@ Top 10 features (mean impurity decrease):
 
 ### Isolation Forest — if_v2.pkl (200 trees, benign-only, contamination=0.05)
 
+**Threshold recalibrated after this initial evaluation — see update below.**
+Original calibration (recall-maximizing, at threshold=0.0445):
+
 | Metric | Value | if_v1 (prior) |
 |--------|-------|---------------|
 | Recall (attacks flagged as anomaly, val) | 0.6645 | 0.6654 |
 | False Positive Rate (benign flagged as anomaly, val) | 0.0996 | 0.0990 |
 | Threshold (IF score) | 0.0445 | 0.04428754 |
 
-Essentially unchanged — expected, since IF trains unsupervised on benign features
-only and just 4/72 features shifted for a subset of records.
+Essentially unchanged from if_v1 at this threshold — expected, since IF trains
+unsupervised on benign features only and just 4/72 features shifted for a
+subset of records. This threshold carried the same test-set FP=0.1011 FAIL
+forward unchanged (`decision-policy.md` §2.3), which motivated the P2
+recalibration below.
+
+**Recalibration (P2, FP≤0.08 target) — threshold=0.02901575:**
+
+| Metric | Val | Test (R2, final) |
+|--------|-----|-------------------|
+| Recall | 0.5596 | 0.5609 |
+| FP rate | 0.0800 | 0.0828 |
+| Both criteria (recall≥0.50 AND FP≤0.10) | PASS | PASS |
+
+This trades recall (0.6645 → 0.5609, −0.10) for a lower, gate-passing FP rate
+(0.1011 → 0.0828 on test). See `docs/decision-policy.md` §2.3 for the full
+rationale and the fine-sweep table.
 
 ---
 
@@ -258,7 +276,7 @@ Implementation: `packages/core/src/worker.ts` (merged PR #18)
 |-------------|----------------|--------|
 | Load rf.onnx + if.onnx at startup | `Promise.all([ort.InferenceSession.create(rf.onnx), ort.InferenceSession.create(if.onnx)])` | ✓ |
 | Inference latency < 3ms p95 | p50=0.823ms, p95=1.044ms, p99=1.130ms | PASS |
-| Decision policy per decision-policy.md | `RF_THRESHOLD=0.70`, `IF_THRESHOLD=0.044498153738474766` (if_v2) applied in `middleware.ts` (IF log-only, not in worker.ts) | ✓ |
+| Decision policy per decision-policy.md | `RF_THRESHOLD=0.35`, `IF_THRESHOLD=0.02901575` (if_v2) applied in `middleware.ts` (IF log-only, not in worker.ts) | ✓ |
 | Fail-open on session load failure | `try/catch` around `await sessionsPromise` in the per-request handler replies `{id, error}` instead of crashing; `middleware.ts` also has `worker.on("error")` as a second fail-open layer | ✓ |
 | Feature reduction 72→66 | By name via `EXCLUDED_NAMES` set, mapped to `MODEL_INDICES` against `FEATURE_NAMES` | ✓ |
 | Parallel RF+IF inference | `Promise.all([rfSession.run(...), ifSession.run(...)])` | ✓ |
