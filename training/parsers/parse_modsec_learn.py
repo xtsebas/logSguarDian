@@ -28,8 +28,13 @@ def emit_records(fout, path: Path, label: str) -> int:
         if not query:
             continue
         record = {
-            "method":       "",
-            "path":         "",
+            # ModSecurity logs only capture the query string, not the full
+            # request line. A live HTTP client always sends a real method and
+            # path (Express reports "GET"/"/" at minimum), so blank defaults
+            # here would train the model on a request shape that never
+            # actually occurs at inference time.
+            "method":       "GET",
+            "path":         "/",
             "query":        query,
             "body":         None,
             "userAgent":    "",

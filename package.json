@@ -11,12 +11,19 @@
     "build": "pnpm -r run build",
     "test": "pnpm -r run test",
     "lint": "eslint packages/extractor/src/ packages/core/src/",
-    "bench:extractor": "pnpm --filter @logsguardian/extractor run build && node benchmarks/extractor.bench.js"
+    "bench:extractor": "pnpm --filter @logsguardian/extractor run build && node benchmarks/extractor.bench.js",
+    "test:e2e": "pnpm --filter @logsguardian/extractor run build && pnpm --filter logsguardian run build && jest --config e2e/jest.e2e.config.js --forceExit"
   },
   "devDependencies": {
+    "@types/express": "^4.17.25",
+    "@types/jest": "^29.5.14",
+    "@types/supertest": "^7.2.1",
     "@typescript-eslint/eslint-plugin": "^8.62.0",
     "@typescript-eslint/parser": "^8.62.0",
-    "eslint": "^10.5.0"
+    "eslint": "^10.5.0",
+    "jest": "^29.7.0",
+    "supertest": "^7.2.2",
+    "ts-jest": "^29.4.11"
   },
   "dependencies": {
     "express": "^5.2.1"

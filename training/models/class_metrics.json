@@ -1,35 +1,35 @@
 {
-  "model": "rf_v2",
+  "model": "rf_v3",
   "n_estimators": 30,
   "max_depth": 25,
   "eval_set": "test",
-  "eval_note": "Official locked test-set numbers (R2 one-time read, 2026-06-20) — docs/decision-policy.md §2.1. Test set read exactly once; no retraining after observing these numbers.",
+  "eval_note": "Official locked test-set numbers (R2 one-time read) - docs/decision-policy.md sec 2.1. Test set read exactly once; no retraining after observing these numbers. Retrained after: (1) HTML entity decode fix for XSS features, (2) modsec_learn method/path GET// normalization.",
   "classes": {
-    "sqli": {
-      "f1": 0.9950,
-      "precision": 0.9949,
-      "recall": 0.9951
-    },
-    "xss": {
-      "f1": 0.9839,
-      "precision": 0.9907,
-      "recall": 0.9771
-    },
-    "path_traversal": {
-      "f1": 0.9666,
-      "precision": 0.9697,
-      "recall": 0.9636
-    },
-    "cmdi": {
-      "f1": 0.8865,
-      "precision": 0.8623,
-      "recall": 0.9122
-    },
     "benign": {
       "f1": 0.9986,
-      "precision": 0.9980,
+      "precision": 0.998,
       "recall": 0.9992
+    },
+    "cmdi": {
+      "f1": 0.8954,
+      "precision": 0.8749,
+      "recall": 0.917
+    },
+    "path_traversal": {
+      "f1": 0.9671,
+      "precision": 0.9694,
+      "recall": 0.9648
+    },
+    "sqli": {
+      "f1": 0.9955,
+      "precision": 0.9953,
+      "recall": 0.9956
+    },
+    "xss": {
+      "f1": 0.9844,
+      "precision": 0.9911,
+      "recall": 0.9778
     }
   },
-  "macro_f1": 0.9661
+  "macro_f1": 0.9682
 }

@@ -58,7 +58,7 @@ interface MiddlewareOptions {
 
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
-| `mode` | `'block' \| 'monitor'` | `'block'` | **block** — sends HTTP 403 when a request is classified as an attack with `confidence ≥ 0.70`. **monitor** — computes and logs the verdict but never blocks; all requests are forwarded regardless of classification. Use `'monitor'` for dark-launch validation before enabling enforcement. |
+| `mode` | `'block' \| 'monitor'` | `'block'` | **block** — sends HTTP 403 when a request is classified as an attack with `confidence ≥ 0.35`. **monitor** — computes and logs the verdict but never blocks; all requests are forwarded regardless of classification. Use `'monitor'` for dark-launch validation before enabling enforcement. |
 | `timeoutMs` | `number` | `50` | Maximum time in milliseconds to wait for the worker to return an inference result. If the worker does not respond within this window the request is passed through and a `'timeout'` event is logged. See [Fail-open contract](#fail-open-contract). This value is provisional — it will be set to `p99_inference_latency × 3` once the F6 Artillery benchmarks run. |
 | `dbPath` | `string` | `./logsguardian.db` (relative to `process.cwd()`) | Absolute or relative path to the SQLite event log file. The file and table are created automatically on first run. Use `':memory:'` in tests to avoid writing to disk. |
 | `modelDir` | `string` | `<package>/models/` | Directory containing `rf.onnx`, `if.onnx`, and `model-metadata.json`. Defaults to the `models/` directory shipped with the package. Override in tests or CI environments where models live elsewhere (e.g. `training/models/`). |
@@ -108,7 +108,7 @@ type Verdict = 'block' | 'pass' | 'pass_anomaly' | 'timeout';
 
 | Value | Meaning |
 |-------|---------|
-| `'block'` | RF predicted an attack class with `confidence ≥ RF_THRESHOLD (0.70)`. In `'block'` mode the request receives HTTP 403. In `'monitor'` mode it is logged but forwarded. |
+| `'block'` | RF predicted an attack class with `confidence ≥ RF_THRESHOLD (0.35)`. In `'block'` mode the request receives HTTP 403. In `'monitor'` mode it is logged but forwarded. |
 | `'pass'` | RF predicted `'benign'` with sufficient confidence, and the IF score is above the anomaly threshold. Normal traffic. |
 | `'pass_anomaly'` | RF classified the request as benign (or below the block threshold), but the IF flagged it as statistically anomalous (`if_score < IF_THRESHOLD`). The request is **always forwarded** — the IF holds no blocking authority. Useful as a signal in downstream SIEM or alerting systems. |
 | `'timeout'` | The worker did not return an inference result within `timeoutMs`. The request is forwarded (fail-open). |
@@ -154,8 +154,8 @@ The middleware applies this policy on every inference result (source: `docs/deci
 
 ```
 rf_classes     = ['benign', 'cmdi', 'path_traversal', 'sqli', 'xss']
-RF_THRESHOLD   = 0.70
-IF_THRESHOLD   = 0.04428754289910031
+RF_THRESHOLD   = 0.35
+IF_THRESHOLD   = 0.044498153738474766
 
 predicted_class = rf_classes[argmax(rf_probs)]
 confidence      = max(rf_probs)

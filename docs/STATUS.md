@@ -68,7 +68,7 @@ python3 training/split.py
 
 Key contracts from `parity_report.json`:
 - `n_features = 66` — drop the 6 excluded features before passing vector to ONNX
-- `threshold_if = 0.0443` — IF score < threshold → anomaly flag
+- `threshold_if = 0.0445` — IF score < threshold → anomaly flag (if_v2, post-retrain)
 - `if_onnx_output_index = 1` — scores are at output index 1, not 0
 - `rf_onnx_output_index = 1` — probabilities are at output index 1
 - `rf_classes = ["benign","cmdi","path_traversal","sqli","xss"]` — class order in proba vector
