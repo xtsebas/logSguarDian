@@ -56,3 +56,36 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm --filter @logsguardian/extractor test
+
+  test-core:
+    name: Test core (CLI, middleware, store, webhook)
+    runs-on: ubuntu-latest
+    needs: build
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      # packages/core's tests import from its own dist/ and from @logsguardian/extractor's
+      # dist/ (workspace package resolution) — both must be built first, unlike test-extractor
+      # which runs ts-jest directly against src/.
+      - run: pnpm run build
+      # Two files are excluded from this gate, both deliberately, both real-ONNX-model
+      # dependent — not CLI/middleware logic:
+      #   - parity.node.test.ts: exact numeric parity between Python and Node ONNX runtimes.
+      #     Its beforeAll hook has exceeded Jest's default timeout in this environment.
+      #   - smoke.test.ts: its "with real models" test has been observed to fail
+      #     intermittently (reproduced locally, not caused by CLI/middleware changes) —
+      #     unreliable enough to gate a PR on right now. Its 3 model-free tests would be
+      #     lost too since Jest excludes by file, not by test — acceptable tradeoff until
+      #     that test is made reliable as separate work.
+      # --forceExit works around onnxruntime-node/worker_threads not always exiting cleanly;
+      # without it, this job can hang after tests already reported pass/fail.
+      - name: Test core (cd into package — pnpm's `--` arg forwarding mishandles jest flags)
+        working-directory: packages/core
+        run: npx jest --testPathIgnorePatterns parity.node.test.ts smoke.test.ts --forceExit
