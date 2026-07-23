@@ -120,3 +120,63 @@ Se documenta como limitación reconocida y línea de trabajo futuro, en lugar de
 remediarse retroactivamente.
 
 See `training/DEDUP_METHODOLOGY.md` for full methodology detail and gap quantification.
+
+---
+
+## 6. Blank `method`/`path` Training Artifact (found via F5.7 E2E suite) — RESOLVED
+
+**Status: fixed in the rf_v3/if_v2 retrain.** `training/parsers/parse_modsec_learn.py`
+now emits `method="GET"`, `path="/"` instead of blank strings (both files
+regenerated, full retrain pipeline re-run). The E2E benign false-positive rate
+dropped from 21.0% to 2.0% as a direct result — see `docs/results.md` §F5.7
+Update. The remainder of this section is kept as the historical record of the
+original finding.
+
+Several training data sources (`modsec_learn.jsonl`, `payload_full.jsonl`,
+`payloads_csv.jsonl`) captured only the query string or body of a request,
+leaving `method` and `path` as empty strings (`""`). This is not possible for
+a real HTTP request — a live client always sends a method and a path (Express
+reports `"GET"`/`"/"` at minimum). When the F5.7 end-to-end suite
+(`e2e/detection.test.ts`) reconstructed these payloads as genuine HTTP
+requests, the model's behavior changed sharply relative to the blank-field
+training representation: the identical query `v=1651145922` scores 99.9%
+benign with `method="", path=""` but 80.7% xss with `method="GET", path="/"`
+(see `docs/results.md` §F5.7 for the full breakdown by class).
+
+This means the model may be relying, in part, on the blank-field pattern
+itself as a (spurious) signal correlated with certain sources/classes rather
+than on the semantic content of the payload. It also means the official
+offline test-set metrics in `docs/decision-policy.md` §2 — computed from
+feature vectors that plausibly share this same blank-field distribution — may
+not fully represent production behavior, where `method`/`path` are always
+populated. Remediation would require normalizing `method`/`path` across all
+training sources (e.g. synthesizing a plausible method/path for query-only
+records) and re-running the full F3–F4 retrain/re-export pipeline; not done
+in this PR for the same R2 reasons documented in `docs/decision-policy.md`
+§2.3.
+
+## 7. XSS Detection Gap on HTML-Entity-Encoded Payloads — PARTIALLY RESOLVED
+
+**Status: mitigated, not eliminated, by two changes.** `packages/extractor`
+now decodes HTML entities before XSS pattern matching
+(`normalizers.ts::decodeHtmlEntities`, wired into `computeXssFeatures`), and
+`RF_THRESHOLD` was recalibrated from 0.70 to 0.35 (`decision-policy.md`
+§2.2.1). E2E xss detection moved 77% → 94% overall (see `docs/results.md`
+§F5.7 Update). Notably, the entity-decode fix **alone was not sufficient** —
+an intermediate run with rf_v3 retrained but `RF_THRESHOLD` still at 0.70
+regressed to 70%, because the retrain shifted rf_v3's confidence calibration
+broadly (not specific to entity-encoded payloads). The threshold
+recalibration, not the decode fix, closed most of the remaining gap. The
+historical finding below (original 68.9% on well-formed HTTP xss, pre-fix) is
+kept as the record of what motivated the entity-decode change; the confidence
+distributions cited are from rf_v2/if_v1 and are no longer current.
+
+Among xss payloads with well-formed `method`/`path` (i.e. excluding the
+artifact in §6), the F5.7 E2E suite detected only 51/74 (68.9%). Every missed
+payload inspected used **HTML-entity encoding** (`&lt;script&gt;`,
+`&quot;...&quot;`) rather than URL/percent-encoding (`%3Cscript%3E`) or raw
+markup (`<script>`) — both of which are reliably detected. RF confidence on
+these misses is 0.50–0.67 (below the 0.70 block threshold but still leaning
+xss, not confidently benign), suggesting the extractor's pattern features do
+not currently recognize HTML-entity encoding as an XSS obfuscation technique.
+This is an evasion gap in the feature set, not a model capacity problem.

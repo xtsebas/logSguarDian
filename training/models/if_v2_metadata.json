@@ -1,0 +1,7 @@
+{
+  "threshold": 0.02901575,
+  "contamination": 0.05,
+  "trained_on": "benign_only",
+  "val_recall": 0.5596,
+  "val_fp_rate": 0.0800
+}

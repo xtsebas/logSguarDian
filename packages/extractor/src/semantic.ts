@@ -4,6 +4,7 @@
  * data_manager/02_feature_engineering.ipynb (celda cd_04).
  */
 import { tokenCount } from "./encoding";
+import { decodeHtmlEntities } from "./normalizers";
 import {
   countMatches,
   SQL_KEYWORDS_COUNT,
@@ -51,21 +52,34 @@ export function computeSqliFeatures(payload: string): Record<string, number> {
   };
 }
 
-/** Grupo 5: marcadores de Cross-Site Scripting (9 features). */
+/**
+ * Grupo 5: marcadores de Cross-Site Scripting (9 features).
+ *
+ * HTML-entity decoding is applied before matching so that payloads like
+ * `&lt;script&gt;` are recognized the same way as `<script>` or `%3Cscript%3E`.
+ * This decoding is XSS-specific: SQLi/path-traversal/cmdi features keep
+ * reading the raw payload, since entity decoding has no bearing on those
+ * attack classes and could introduce false signals there.
+ *
+ * `html_entity_density` is the one exception — it measures the presence of
+ * *encoded* entities in the raw payload as an obfuscation signal, so it must
+ * stay computed on the original (undecoded) string.
+ */
 export function computeXssFeatures(payload: string): Record<string, number> {
-  const pl = Math.max(payload.length, 1);
-  const xssMarkerCount = countMatches(payload, XSS_MARKER_COUNT);
+  const decoded = decodeHtmlEntities(payload);
+  const pl = Math.max(decoded.length, 1);
+  const xssMarkerCount = countMatches(decoded, XSS_MARKER_COUNT);
 
   return {
     xss_marker_count: xssMarkerCount,
     xss_marker_density: (xssMarkerCount / pl) * 100,
-    html_tag_count: countMatches(payload, HTML_TAG_COUNT),
-    script_tag_present: SCRIPT_TAG_TEST.test(payload) ? 1 : 0,
-    js_event_handler_count: countMatches(payload, JS_EVENT_HANDLER_COUNT),
-    javascript_url_count: countMatches(payload, JAVASCRIPT_URL_COUNT),
-    html_entity_density: (countMatches(payload, HTML_ENTITY_COUNT) / pl) * 100,
-    alert_function_present: ALERT_FUNCTION_TEST.test(payload) ? 1 : 0,
-    inline_style_present: INLINE_STYLE_TEST.test(payload) ? 1 : 0,
+    html_tag_count: countMatches(decoded, HTML_TAG_COUNT),
+    script_tag_present: SCRIPT_TAG_TEST.test(decoded) ? 1 : 0,
+    js_event_handler_count: countMatches(decoded, JS_EVENT_HANDLER_COUNT),
+    javascript_url_count: countMatches(decoded, JAVASCRIPT_URL_COUNT),
+    html_entity_density: (countMatches(payload, HTML_ENTITY_COUNT) / Math.max(payload.length, 1)) * 100,
+    alert_function_present: ALERT_FUNCTION_TEST.test(decoded) ? 1 : 0,
+    inline_style_present: INLINE_STYLE_TEST.test(decoded) ? 1 : 0,
   };
 }
 

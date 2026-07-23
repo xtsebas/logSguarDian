@@ -20,7 +20,7 @@ Exits with code 1 if the file already exists — it will not overwrite an existi
 // logsguardian.config.js
 module.exports = {
   mode: 'block',
-  threshold: 0.70,
+  threshold: 0.35,
   model: 'hybrid',
   timeoutMs: 50,
   dbPath: './logsguardian.db',
@@ -70,7 +70,7 @@ logsguardian config set <key> <value>
 
 | Key | Type | Valid values | Default |
 |---|---|---|---|
-| `threshold` | float | `0` – `1` | `0.70` |
+| `threshold` | float | `0` – `1` | `0.35` |
 | `mode` | string | `block`, `monitor` | `block` |
 | `model` | string | `rf`, `if`, `hybrid` | `hybrid` |
 

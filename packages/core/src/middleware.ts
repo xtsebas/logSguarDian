@@ -29,8 +29,8 @@ import type {
   WorkerResponse,
 } from "./types";
 
-const RF_THRESHOLD = 0.70;
-const IF_THRESHOLD = 0.04428754289910031;
+const RF_THRESHOLD = 0.35;
+const IF_THRESHOLD = 0.02901575;
 const RF_CLASSES: AttackClass[] = ["benign", "cmdi", "path_traversal", "sqli", "xss"];
 
 const DEFAULT_TIMEOUT_MS = 50;

@@ -10,7 +10,7 @@ module.exports = {
   mode: 'block',
 
   /** RF confidence threshold (0–1). Requests with confidence >= threshold are blocked. */
-  threshold: 0.70,
+  threshold: 0.35,
 
   /** Model to use for inference: 'rf', 'if', or 'hybrid' (RF + anomaly detection). */
   model: 'hybrid',
