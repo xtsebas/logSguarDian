@@ -33,7 +33,7 @@ describe("absolute_path_indicator - path fallback false positives", () => {
       method: "POST",
       path: "/login",
       query: "",
-      body: "username=alice&password=alice123",
+      body: "username=alice&password=",
     };
     expect(extractFeatures(req).absolute_path_indicator).toBe(0);
   });
