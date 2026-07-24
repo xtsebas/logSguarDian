@@ -113,7 +113,7 @@ describe("attacks inspect", () => {
     });
   });
 
-  test("--format json for cmdi: f1 value is 0.8865 (test-set, docs/decision-policy.md §2.1)", () => {
+  test("--format json for cmdi: f1 value is 0.8954 (test-set, docs/decision-policy.md §2.1)", () => {
     withTempDir(() => {
       runConfigInit();
       const spy = jest.spyOn(console, "log").mockImplementation(() => {});
@@ -121,7 +121,7 @@ describe("attacks inspect", () => {
       const parsed = JSON.parse(spy.mock.calls[0][0] as string);
       spy.mockRestore();
 
-      expect(parsed.detection_rate.f1).toBe(0.8865);
+      expect(parsed.detection_rate.f1).toBe(0.8954);
       expect(parsed.detection_rate.eval_set).toBe("test");
     });
   });
