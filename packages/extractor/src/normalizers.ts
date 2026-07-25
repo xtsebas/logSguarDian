@@ -14,3 +14,17 @@ export function decodeHtmlEntities(str: string): string {
     .replace(/&#(\d+);/g, (_, code) => String.fromCharCode(parseInt(code, 10)))
     .replace(/&#x([0-9a-f]+);/gi, (_, hex) => String.fromCharCode(parseInt(hex, 16)));
 }
+
+/**
+ * Percent-decodes a payload, used ahead of XSS pattern matching so that
+ * `%3Cscript%3E` is recognized the same way as `<script>`. Falls back to the
+ * original string on malformed escape sequences (decodeURIComponent throws)
+ * instead of raising, since a payload is not required to be valid percent-encoding.
+ */
+export function safeDecodeURIComponent(str: string): string {
+  try {
+    return decodeURIComponent(str);
+  } catch {
+    return str;
+  }
+}
