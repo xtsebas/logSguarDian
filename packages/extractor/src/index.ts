@@ -1,10 +1,12 @@
 /**
- * Extractor canonico de 72 features para deteccion de SQLi, XSS,
+ * Extractor canonico de 73 features para deteccion de SQLi, XSS,
  * Path Traversal y Command Injection.
  *
  * Puerto fiel de extract_features() en
- * data_manager/02_feature_engineering.ipynb (celdas cd_01/cd_03/cd_04).
- * Este es el UNICO lugar donde se calculan las 72 features (R1 del plan
+ * data_manager/02_feature_engineering.ipynb (celdas cd_01/cd_03/cd_04),
+ * mas non_form_operator_count (73a feature, no presente en el notebook
+ * original — ver packages/extractor/src/semantic.ts).
+ * Este es el UNICO lugar donde se calculan las features (R1 del plan
  * de ejecucion): tanto los datasets de entrenamiento (via CLI) como el
  * middleware Express en runtime deben usar esta implementacion.
  */
@@ -21,7 +23,7 @@ import { extractBestPayload } from "./body-parser";
 
 export * from "./types";
 
-/** Orden canonico de las 72 columnas (debe coincidir con FEATURE_COLS de cd_01). */
+/** Orden canonico de las 73 columnas (72 de FEATURE_COLS de cd_01 + non_form_operator_count). */
 export const FEATURE_NAMES: readonly string[] = [
   // Grupo 1: longitudes (10)
   "payload_length", "payload_entropy", "uri_length", "path_length",
@@ -34,10 +36,10 @@ export const FEATURE_NAMES: readonly string[] = [
   // Grupo 3: encoding (7)
   "url_encoded_ratio", "encoded_char_freq", "double_encoded_count",
   "hex_escape_count", "unicode_escape_count", "html_entity_count", "base64_like_count",
-  // Grupo 4: SQLi (9)
+  // Grupo 4: SQLi (10)
   "sqli_keyword_count", "sqli_keyword_density", "sqli_comment_count",
-  "sqli_operator_count", "quote_count", "semicolon_count", "parenthesis_count",
-  "union_present", "select_present",
+  "sqli_operator_count", "non_form_operator_count", "quote_count",
+  "semicolon_count", "parenthesis_count", "union_present", "select_present",
   // Grupo 5: XSS (9)
   "xss_marker_count", "xss_marker_density", "html_tag_count",
   "script_tag_present", "js_event_handler_count", "javascript_url_count",
@@ -59,8 +61,8 @@ export const FEATURE_NAMES: readonly string[] = [
   "error_rate_4xx_60s", "endpoint_diversity_60s",
 ];
 
-if (FEATURE_NAMES.length !== 72) {
-  throw new Error(`FEATURE_NAMES debe tener 72 elementos, tiene ${FEATURE_NAMES.length}`);
+if (FEATURE_NAMES.length !== 73) {
+  throw new Error(`FEATURE_NAMES debe tener 73 elementos, tiene ${FEATURE_NAMES.length}`);
 }
 
 /** Grupo 9: features temporales, requieren estado de sesion no disponible aqui. */
@@ -92,7 +94,7 @@ export function deriveRawPayload(req: CanonicalRequest): string {
 }
 
 /**
- * Extrae las 72 features de una peticion HTTP canonica.
+ * Extrae las 73 features de una peticion HTTP canonica.
  * Acepta un CanonicalRequest parcial; los campos ausentes se normalizan
  * a sus valores por defecto.
  */

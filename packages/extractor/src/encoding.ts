@@ -1,6 +1,6 @@
 /**
  * Grupo 2 (composicion de caracteres) y Grupo 3 (encoding) del vector de
- * 72 features. Portado desde extract_features() en
+ * 73 features. Portado desde extract_features() en
  * data_manager/02_feature_engineering.ipynb (celda cd_04).
  */
 import { extendedAsciiRatio } from "./entropy";

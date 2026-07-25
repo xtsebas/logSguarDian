@@ -5,9 +5,11 @@
  * sessions alive for the process lifetime. Receives WorkerRequest messages
  * from the parent, runs inference, and replies with WorkerResponse messages.
  *
- * Feature reduction: the 72-feature vector from @logsguardian/extractor is
- * reduced to 66 by dropping the 6 excluded features by name (not by index)
- * before passing to the ONNX models. See docs/decision-policy.md §4.
+ * Feature reduction: the 73-feature vector from @logsguardian/extractor is
+ * reduced to 66 by dropping the 6 runtime-behavioral features plus
+ * non_form_operator_count (not yet in rf_v7/if_v6, added ahead of the v8
+ * retrain — see semantic.ts) by name (not by index) before passing to the
+ * ONNX models. See docs/decision-policy.md §4.
  */
 import { parentPort, workerData } from "worker_threads";
 import * as ort from "onnxruntime-node";
@@ -25,6 +27,8 @@ const EXCLUDED_NAMES = new Set([
   "req_count_60s",
   "error_rate_4xx_60s",
   "endpoint_diversity_60s",
+  // Not yet trained into rf_v7/if_v6 — exclude until the v8 retrain picks it up.
+  "non_form_operator_count",
 ]);
 
 /** Positions in FEATURE_NAMES that the model actually expects (0-based, length=66). */
@@ -64,8 +68,8 @@ parentPort!.on("message", async (msg: WorkerRequest) => {
 
   try {
     const { rfSession, ifSession } = sessions;
-    const vector72 = extractFeatureVector(msg.canonical);
-    const input66 = Float32Array.from(MODEL_INDICES.map((i) => vector72[i]));
+    const vector73 = extractFeatureVector(msg.canonical);
+    const input66 = Float32Array.from(MODEL_INDICES.map((i) => vector73[i]));
     const tensor = new ort.Tensor("float32", input66, [1, 66]);
 
     const [rfResult, ifResult] = await Promise.all([

@@ -111,3 +111,13 @@ mappings:
     xss: xss
     sqli: sqli
     cmdi: cmdi
+
+  # training/data_clean/synthetic_evasion.jsonl
+  # Synthetic double-HTML-entity, JS unicode-escape (\uXXXX), and
+  # double-percent-encoded XSS payloads, generated because the real corpus
+  # had 0/7/32 examples of these three evasion patterns respectively —
+  # insufficient to validate a recursive-decode fix. Staged ahead of that
+  # follow-up (not consumed by any extractor/decode logic yet). Raw label
+  # field is already canonical ("xss").
+  synthetic_evasion:
+    xss: xss

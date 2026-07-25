@@ -18,6 +18,9 @@ export const SQLI_COMMENT_COUNT = /(--|#(?!\d)|\/\*|\*\/)/g;
 export const SQLI_OPERATOR_COUNT = /(<>|!=|>=|<=|(?<![<>!])=(?!=))/g;
 export const UNION_PRESENT_TEST = /\bunion\b/i;
 export const SELECT_PRESENT_TEST = /\bselect\b/i;
+// Form-field separators (key= at the start of the payload or after &), used
+// to subtract benign key=value structure out of sqli_operator_count.
+export const FORM_FIELD_COUNT = /(^|&)[a-zA-Z_][a-zA-Z0-9_]*=/g;
 
 // ---- Grupo 5: XSS ----------------------------------------------------------
 export const XSS_MARKER_COUNT =
