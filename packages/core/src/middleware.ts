@@ -30,7 +30,7 @@ import type {
 } from "./types";
 
 const RF_THRESHOLD = 0.35;
-const IF_THRESHOLD = 0.028394983206113;
+const IF_THRESHOLD = 0.027848046488935296;
 const RF_CLASSES: AttackClass[] = ["benign", "cmdi", "path_traversal", "sqli", "xss"];
 
 const DEFAULT_TIMEOUT_MS = 50;
@@ -142,10 +142,15 @@ export function logsguardian(options: MiddlewareOptions = {}): RequestHandler {
       // req.body is {} by default when no body-parser populates it (truthy but empty).
       // Checking key count avoids treating "{}" as a real body, which would shadow
       // the query string — where SQLi/XSS/PT/CMDi payloads are overwhelmingly delivered.
+      // Encoded the same way as the query string (URLSearchParams, not JSON.stringify):
+      // the training corpus's body samples are raw form-encoded text, so wrapping parsed
+      // body objects in JSON syntax ({, }, :, ,, extra ") introduced structural characters
+      // the model was never trained to see in benign requests, causing false positives on
+      // ordinary form POSTs (e.g. login) — see logSguarDian-vulnerable-project/docs/config2-results.md.
       body: typeof req.body === "string"
         ? req.body
         : (req.body && typeof req.body === "object" && Object.keys(req.body).length > 0
-          ? JSON.stringify(req.body)
+          ? new URLSearchParams(req.body as Record<string, string>).toString()
           : ""),
       userAgent,
       contentType: (req.headers["content-type"] as string) ?? "",
