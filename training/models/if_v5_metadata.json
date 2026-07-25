@@ -1,7 +1,8 @@
 {
-  "threshold": 0.028684944435920012,
+  "threshold": 0.00940951,
   "contamination": 0.05,
   "trained_on": "benign_only",
-  "val_recall": 0.7605025988269515,
-  "val_fp_rate": 0.07836147171588081
+  "val_recall": 0.6531,
+  "val_fp_rate": 0.0599,
+  "calibration_note": "Recalibrated with FP<=0.06 target (instead of FP<=0.08) to leave headroom for val->test drift. Per-field body analysis (rf_v6 fix) reduced payload_length signal for multi-field attacks, making IF boundary estimation less stable near 0.08."
 }
