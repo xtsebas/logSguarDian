@@ -4,10 +4,10 @@
   "target_opset": 17,
   "n_features": 66,
   "parity_samples": 1000,
-  "rf_max_prob_diff": 8.66243564656699e-08,
-  "if_max_score_diff": 2.0279641388398773e-07,
+  "rf_max_prob_diff": 9.283264823523041e-08,
+  "if_max_score_diff": 1.8251810124381151e-07,
   "parity_passed": true,
-  "threshold_if": 0.028394983206113,
+  "threshold_if": 0.027848046488935296,
   "if_onnx_output_index": 1,
   "rf_onnx_output_index": 1,
   "rf_classes": [
