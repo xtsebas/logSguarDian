@@ -180,3 +180,63 @@ these misses is 0.50–0.67 (below the 0.70 block threshold but still leaning
 xss, not confidently benign), suggesting the extractor's pattern features do
 not currently recognize HTML-entity encoding as an XSS obfuscation technique.
 This is an evasion gap in the feature set, not a model capacity problem.
+
+### 7.1 Recursive decode for double-encoded and unicode-escaped XSS — RESOLVED (unicode-escape, double-percent); HTML-entity confirmed not a real gap
+
+The single-pass decode above (§7) only resolves one layer of encoding.
+Investigation into three candidate evasion patterns — double HTML-entity
+(`&amp;lt;script&amp;gt;`), double percent (`%253Cscript%253E`), and
+JavaScript unicode escapes (`<script>`) — found the practical picture
+is not "three equal gaps," once each is tested with genuinely full-string
+obfuscation rather than the tag-delimiters-only obfuscation an earlier
+synthetic fixture used by mistake (which inflated two categories to a
+false 100% baseline):
+
+- **Unicode-escape: a genuine, now-closed gap.** `\uXXXX` sequences are
+  interpreted by the JS engine itself at parse time, so an attacker can
+  legitimately unicode-escape an entire payload — including the callable
+  (`alert(1)`) — and it still executes once decoded. Baseline detection on
+  a corrected 120-record fixture (every character escaped): **0% → 100%**
+  after adding `decodeUnicodeEscapes` to a bounded recursive wrapper
+  (`normalizeForXssDetection`, `packages/extractor/src/normalizers.ts`).
+- **Double-percent: real, and resolved better than expected.** RFC 3986's
+  unreserved character set (letters, digits, `. - _ ~`) is never
+  percent-encoded, so any trigger substring made purely of those characters
+  (`document.cookie`) survives percent-encoding at any depth — a structural
+  ceiling, not a fixture flaw. Baseline **50% → 100%** after the fix:
+  recursive percent-decoding resolves the *other* half too (payloads whose
+  trigger relies on `<`, `>`, `(`, `)`, `=`, `:`, which do get encoded).
+- **Double HTML-entity: confirmed not a practical gap.** HTML-entity
+  decoding only happens during HTML *parsing* — never inside JS execution
+  context — so an attacker who entity-encodes the callable itself
+  (`alert(1)` → `&#97;&#108;...`) breaks their own exploit; it no longer
+  executes as valid JavaScript. Realistic entity-based evasion can therefore
+  only ever obscure the tag delimiters (`<`, `>`), never the payload
+  content, and that content (`alert(`, `onerror=`) remains a separately
+  matched signal regardless of whether the surrounding tag is decoded. A
+  synthetic fixture that fully obfuscated every character still measured
+  **100% → 100%** (no fixture-level movement) — not because the fix doesn't
+  work, but because this category isn't a real gap once the model already
+  matches on the callable independent of the tag. The one genuine narrow
+  case — a payload with *no* separately-exposed keyword at all (e.g.
+  `<script>x()</script>` entity-encoded) — did move, **0/0 → 2/2**,
+  confirming the fix is still correct and harmless to include.
+
+**Scope discipline preserved**: the recursive decode applies only inside
+`computeXssFeatures` — `html_entity_density` and `url_encoded_ratio` still
+measure the raw, undecoded payload (the obfuscation-density signal these
+features exist for would be destroyed if they read the decoded string).
+Bounded to `maxDepth=5`; measured at 2.12ms for a 110KB pathological input,
+well inside the 50ms fail-open timeout — no DoS risk from the depth cap.
+FEATURE_NAMES count is unchanged at 73 (this changes what string feeds
+`computeXssFeatures`, not the feature schema).
+
+**Train/serve skew — flagged, not yet retrained.** 187/29,897 real xss
+corpus rows (0.625%) show a different `xss_marker_count` under the new
+decode logic versus what rf_v8/if_v7 were trained on (mostly real
+double-percent-encoded payloads already present in `owasp_logs`). Small,
+but consistent with this project's established practice of retraining after
+any extractor change that shifts feature values. Not retrained yet —
+intentionally batched into a planned v9 cycle alongside other pending
+changes (MinHash near-duplicate dedup, real cmdi data) rather than
+retraining per isolated change.
