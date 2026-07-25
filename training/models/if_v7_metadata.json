@@ -1,0 +1,24 @@
+{
+  "threshold": 0.004463624698915758,
+  "contamination": 0.05,
+  "n_estimators": 200,
+  "max_features": 1.0,
+  "max_samples": 4096,
+  "dropped_features": [
+    "dotdot_encoded_count",
+    "authorization_length",
+    "unusual_headers_count",
+    "null_byte_count",
+    "os_path_indicator",
+    "sensitive_file_target"
+  ],
+  "n_features": 61,
+  "val_recall": 0.9120991774943378,
+  "val_fp_rate": 0.05972960247528082,
+  "val_per_class_recall": {
+    "sqli": 0.8962817430062753,
+    "xss": 0.9792595896520964,
+    "path_traversal": 0.9972288202692003,
+    "cmdi": 0.9399759903961584
+  }
+}
