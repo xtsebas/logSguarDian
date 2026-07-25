@@ -101,3 +101,13 @@ mappings:
   # slice removed from payloads_csv. Raw label field is already "benign".
   synthetic_nav:
     benign: benign
+
+  # training/data_clean/synthetic_multifield.jsonl
+  # Synthetic multi-field form bodies (attack payload in one field,
+  # benign values in the others) generated so the model sees the shape
+  # per-field body analysis (Approach B) is designed to detect. Raw
+  # label field is already canonical (xss/sqli/cmdi).
+  synthetic_multifield:
+    xss: xss
+    sqli: sqli
+    cmdi: cmdi
