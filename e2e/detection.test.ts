@@ -124,6 +124,19 @@ describe("E2E Detection Suite (PLAN.md F5.7 GATE)", () => {
     expect(res.status).not.toBe(403);
   }, 15000);
 
+  test("benign multi-field post is not blocked (per-class threshold)", async () => {
+    // Regression: extractBestPayload tie-break picked the first field instead
+    // of the whole body, scoring this as sqli at a confidence that cleared the
+    // old global RF_THRESHOLD. Per-class thresholds (docs/decision-policy.md §3)
+    // raise the sqli bar enough to pass it without weakening true sqli detection.
+    const res = await request(app)
+      .post("/posts")
+      .type("form")
+      .send({ title: "Hello", content: "Just a normal note" });
+
+    expect(res.status).not.toBe(403);
+  }, 15000);
+
   test("GATE: detection rate summary", async () => {
     const fixtures = loadFixtures();
     const results: Record<string, { total: number; blocked: number }> = {};
