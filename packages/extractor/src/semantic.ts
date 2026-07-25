@@ -4,7 +4,7 @@
  * data_manager/02_feature_engineering.ipynb (celda cd_04).
  */
 import { tokenCount } from "./encoding";
-import { decodeHtmlEntities } from "./normalizers";
+import { decodeHtmlEntities, safeDecodeURIComponent } from "./normalizers";
 import {
   countMatches,
   SQL_KEYWORDS_COUNT,
@@ -55,18 +55,18 @@ export function computeSqliFeatures(payload: string): Record<string, number> {
 /**
  * Grupo 5: marcadores de Cross-Site Scripting (9 features).
  *
- * HTML-entity decoding is applied before matching so that payloads like
- * `&lt;script&gt;` are recognized the same way as `<script>` or `%3Cscript%3E`.
- * This decoding is XSS-specific: SQLi/path-traversal/cmdi features keep
- * reading the raw payload, since entity decoding has no bearing on those
- * attack classes and could introduce false signals there.
+ * Percent-decoding then HTML-entity decoding is applied before matching so
+ * that payloads like `%3Cscript%3E` or `&lt;script&gt;` are recognized the
+ * same way as `<script>`. This decoding is XSS-specific: SQLi/path-traversal/
+ * cmdi features keep reading the raw payload, since decoding has no bearing
+ * on those attack classes and could introduce false signals there.
  *
  * `html_entity_density` is the one exception — it measures the presence of
  * *encoded* entities in the raw payload as an obfuscation signal, so it must
  * stay computed on the original (undecoded) string.
  */
 export function computeXssFeatures(payload: string): Record<string, number> {
-  const decoded = decodeHtmlEntities(payload);
+  const decoded = decodeHtmlEntities(safeDecodeURIComponent(payload));
   const pl = Math.max(decoded.length, 1);
   const xssMarkerCount = countMatches(decoded, XSS_MARKER_COUNT);
 

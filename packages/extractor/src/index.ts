@@ -17,6 +17,7 @@ import {
   computePathTraversalFeatures,
   computeCommandInjectionFeatures,
 } from "./semantic";
+import { extractBestPayload } from "./body-parser";
 
 export * from "./types";
 
@@ -75,9 +76,17 @@ const TEMPORAL_FEATURES: Record<string, number> = {
  * rawPayload: el campo sobre el que operan los grupos 1-7 (excepto las
  * longitudes especificas de uri/query/body). Prioridad documentada en
  * CANONICAL_REQUEST_NOTES.md seccion 6: body > query > path.
+ *
+ * When the body is a multi-field urlencoded form, an attack payload in
+ * one field gets diluted by benign fields when the whole body string is
+ * scored as one blob (density-style features shrink as the string grows).
+ * extractBestPayload() isolates the decoded field value with the
+ * strongest attack signal instead of the raw key=value&key=value string —
+ * this matches the shape of the training corpus, which is raw attack
+ * payloads (no key name, no encoding), not urlencoded form bodies.
  */
 export function deriveRawPayload(req: CanonicalRequest): string {
-  if (req.body.length > 0) return req.body;
+  if (req.body.length > 0) return extractBestPayload(req.body);
   if (req.query.length > 0) return req.query;
   return req.path;
 }

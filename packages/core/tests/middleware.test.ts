@@ -105,7 +105,7 @@ const SQLI_HIGH   = [0.05, 0.05, 0.05, 0.80, 0.05]; // sqli at 0.80
 const SQLI_LOW    = [0.10, 0.10, 0.10, 0.50, 0.20]; // sqli at 0.50
 const BENIGN_HIGH = [0.90, 0.03, 0.03, 0.02, 0.02]; // benign at 0.90
 const IF_NORMAL   = 0.10;                             // above threshold → not anomaly
-const IF_ANOMALY  = 0.01;                             // below threshold → anomaly
+const IF_ANOMALY  = 0.001;                            // below threshold → anomaly
 
 // ─── Tests ───────────────────────────────────────────────────────────────────
 describe("logsguardian — fail-open", () => {

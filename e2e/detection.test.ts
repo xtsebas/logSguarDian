@@ -111,6 +111,19 @@ describe("E2E Detection Suite (PLAN.md F5.7 GATE)", () => {
     expect(fpRate).toBeLessThanOrEqual(FP_THRESHOLD);
   }, 60000);
 
+  test("benign POST /login with form body is not blocked", async () => {
+    // Regression: middleware used to serialize req.body with JSON.stringify,
+    // so {"username":"alice",...} introduced {, }, : characters the model
+    // reads as XSS-ish structure. Body is now URLSearchParams-encoded like
+    // the query string, matching the training corpus's form-encoded text.
+    const res = await request(app)
+      .post("/login")
+      .type("form")
+      .send({ username: "alice", password: "alice123" });
+
+    expect(res.status).not.toBe(403);
+  }, 15000);
+
   test("GATE: detection rate summary", async () => {
     const fixtures = loadFixtures();
     const results: Record<string, { total: number; blocked: number }> = {};
