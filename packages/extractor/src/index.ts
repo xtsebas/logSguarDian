@@ -91,13 +91,20 @@ export function extractFeatures(req: Partial<CanonicalRequest>): Record<string, 
   const canonical = normalizeCanonicalRequest(req);
   const rawPayload = deriveRawPayload(canonical);
 
+  // When rawPayload falls back to the path (no query/body), the leading
+  // "/" mandated by HTTP is meaningless as a path-traversal signal — every
+  // normal navigation request would otherwise trip absolute_path_indicator.
+  const isPathFallback =
+    rawPayload === canonical.path && canonical.body.length === 0 && canonical.query.length === 0;
+  const pathTraversalPayload = isPathFallback ? rawPayload.replace(/^\//, "") : rawPayload;
+
   const computed: Record<string, number> = {
     ...computeLengthFeatures(rawPayload, canonical.path, canonical.query, canonical.body),
     ...computeCompositionFeatures(rawPayload),
     ...computeEncodingFeatures(rawPayload),
     ...computeSqliFeatures(rawPayload),
     ...computeXssFeatures(rawPayload),
-    ...computePathTraversalFeatures(rawPayload),
+    ...computePathTraversalFeatures(pathTraversalPayload),
     ...computeCommandInjectionFeatures(rawPayload),
     ...computeHttpFeatures(canonical),
     ...TEMPORAL_FEATURES,

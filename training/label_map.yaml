@@ -94,3 +94,10 @@ mappings:
   command_injection:
     "0": benign
     "1": cmdi
+
+  # training/data_clean/synthetic_nav.jsonl
+  # Synthetic clean navigation traffic (GET/POST to plain app routes, no
+  # query/body attack payloads) generated to replace the corrupt nav-only
+  # slice removed from payloads_csv. Raw label field is already "benign".
+  synthetic_nav:
+    benign: benign

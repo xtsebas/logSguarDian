@@ -30,7 +30,7 @@ import type {
 } from "./types";
 
 const RF_THRESHOLD = 0.35;
-const IF_THRESHOLD = 0.02901575;
+const IF_THRESHOLD = 0.028394983206113;
 const RF_CLASSES: AttackClass[] = ["benign", "cmdi", "path_traversal", "sqli", "xss"];
 
 const DEFAULT_TIMEOUT_MS = 50;
