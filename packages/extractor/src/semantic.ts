@@ -10,6 +10,7 @@ import {
   SQL_KEYWORDS_COUNT,
   SQLI_COMMENT_COUNT,
   SQLI_OPERATOR_COUNT,
+  FORM_FIELD_COUNT,
   UNION_PRESENT_TEST,
   SELECT_PRESENT_TEST,
   XSS_MARKER_COUNT,
@@ -34,16 +35,22 @@ import {
   OS_PATH_INDICATOR_TEST,
 } from "./patterns";
 
-/** Grupo 4: marcadores de SQL Injection (9 features). */
+/** Grupo 4: marcadores de SQL Injection (10 features). */
 export function computeSqliFeatures(payload: string): Record<string, number> {
   const tokens = Math.max(tokenCount(payload), 1);
   const sqliKeywordCount = countMatches(payload, SQL_KEYWORDS_COUNT);
+  const sqliOperatorCount = countMatches(payload, SQLI_OPERATOR_COUNT);
+  const formFieldCount = countMatches(payload, FORM_FIELD_COUNT);
 
   return {
     sqli_keyword_count: sqliKeywordCount,
     sqli_keyword_density: sqliKeywordCount / tokens,
     sqli_comment_count: countMatches(payload, SQLI_COMMENT_COUNT),
-    sqli_operator_count: countMatches(payload, SQLI_OPERATOR_COUNT),
+    sqli_operator_count: sqliOperatorCount,
+    // Additive only — subtracts benign key=value form syntax out of
+    // sqli_operator_count without modifying that feature itself, so rows
+    // that rely solely on sqli_operator_count keep their original signal.
+    non_form_operator_count: Math.max(0, sqliOperatorCount - formFieldCount),
     quote_count: countMatches(payload, /['"]/g),
     semicolon_count: countMatches(payload, /;/g),
     parenthesis_count: countMatches(payload, /[()]/g),
