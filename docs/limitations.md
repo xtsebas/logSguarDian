@@ -42,6 +42,52 @@ alternatives are: (a) architectures with more compact representations (XGBoost,
 LightGBM); (b) additional features that improve cmdi separability (e.g. shell token
 sequence analysis on the raw payload).
 
+### 1.1 Real diverse data (v9) — the SMOTE ceiling broke, with a nuance
+
+**The hypothesis behind this experiment**: SMOTE's failure showed *sample count*
+wasn't the problem, but that left open whether *genuine technique diversity*
+(not synthetic interpolation between existing points) could open the feature-space
+regions SMOTE couldn't reach. v9 added 2,470 real cmdi payloads from two public
+sources — SecLists' `command-injection-commix.txt` (2,455 samples, deduplicated
+to one representative per structural template) and 15 hand-curated
+PayloadsAllTheThings payloads — verified via MinHash (threshold=0.70) to have
+**0% near-duplicate overlap** with the existing 5,554-sample cmdi corpus, i.e.
+genuinely different techniques (subshell/backtick splitting, `tr`/`xxd`
+hex-encoding bypasses, quote-splitting evasion, DNS exfiltration, blind
+character-oracle extraction, polyglot payloads), not more points near existing
+ones. This grew the cmdi class 44.5% (5,554 → 8,024 samples) without touching
+SMOTE, sample weighting, or model architecture.
+
+**Result: the ceiling broke, cleanly, on both models.**
+
+| Metric | v7/v8 (SMOTE-era ceiling) | v9 (real diverse data) |
+|--------|---------------------------|--------------------------|
+| RF cmdi F1 (val) | 0.89–0.90 | **0.9369** |
+| RF cmdi F1 (test, R2) | — | **0.9342** (consistent with val — not overfitting) |
+| RF macro F1 (val) | 0.9691 (v8) | **0.9810** |
+| IF cmdi recall (val) | 0.9400 (v8) | **0.9443** |
+
+Where SMOTE moved cmdi F1 by +0.015 and only at shallow depths, real diverse data
+moved it by **+0.03 to +0.05** at the production depth (25), and the gain held
+identically on the held-out test set — the opposite of the interpolation problem
+SMOTE had, where synthetic vectors created feature combinations no real attack
+would produce. This is a genuine confirmation of the original diagnosis: the
+separability problem was about the *training distribution's technique coverage*,
+not about having more samples of the same techniques.
+
+**The nuance — offline gain did not show up in the small live E2E fixture.**
+The 100-payload E2E cmdi fixture (`e2e/fixtures/test_payloads.jsonl`, unchanged
+across v7–v9) stayed flat-to-slightly-down: 97% (v8) → 96% (v9), a one-sample
+difference at this fixture size, within noise. This does not contradict the
+test-set result — it reflects the E2E fixture's small, fixed sample effectively
+being near a detection ceiling already, while the offline test set (1,203 cmdi
+samples, comprehensive and drawn from the same distribution the new data
+targets) has the statistical resolution to show the real improvement. The
+practical implication: the E2E suite's 100-payload-per-class fixtures are useful
+as a fast smoke-level regression gate but are not sized to detect improvements
+of this magnitude — the test-set F1 is the trustworthy signal here, consistent
+with why R2 test-set reads exist as the authoritative metric in this project.
+
 ---
 
 ## 2. ONNX Runtime Memory Expansion Factor

@@ -1,8 +1,8 @@
 {
   "rf_n_features": 67,
   "if_n_features": 61,
-  "rf_max_diff": 9.165910164199431e-08,
-  "if_max_diff": 2.0029616965011598e-07,
+  "rf_max_diff": 1.0891766311083018e-07,
+  "if_max_diff": 2.4342779436636874e-07,
   "parity_passed": true,
   "rf_classes": [
     "benign",
@@ -11,7 +11,7 @@
     "sqli",
     "xss"
   ],
-  "threshold_if": 0.004463624698915758,
+  "threshold_if": 0.003327453129252589,
   "rf_onnx_output_index": 1,
   "if_onnx_output_index": 1
 }

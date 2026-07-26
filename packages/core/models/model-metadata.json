@@ -11,17 +11,17 @@
     "n_features": 61,
     "target_opset": 17,
     "onnx_output_index": 1,
-    "threshold": 0.004463624698915758,
+    "threshold": 0.00332745,
     "contamination": 0.05,
     "max_samples": 4096,
     "trained_on": "benign_only",
-    "val_recall": 0.9121,
-    "val_fp_rate": 0.0597
+    "val_recall": 0.9122,
+    "val_fp_rate": 0.0599
   },
   "parity": {
     "parity_passed": true,
     "parity_samples": 100,
-    "rf_max_prob_diff": 9.165910164199431e-08,
-    "if_max_score_diff": 2.0029616965011598e-07
+    "rf_max_prob_diff": 1.1e-07,
+    "if_max_score_diff": 2.4e-07
   }
 }

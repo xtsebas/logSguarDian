@@ -121,3 +121,20 @@ mappings:
   # field is already canonical ("xss").
   synthetic_evasion:
     xss: xss
+
+  # training/data_clean/seclists_cmdi.jsonl
+  # SecLists' Fuzzing/command-injection-commix.txt (Commix's own generated
+  # fuzzing payload set). Deduplicated to one representative per structural
+  # template (canary/number-stripped) — see training/parsers/parse_seclists_cmdi.py.
+  # Raw label field is already canonical ("cmdi").
+  seclists_cmdi:
+    cmdi: cmdi
+
+  # training/data_clean/patt_cmdi_curated.jsonl
+  # 21 hand-curated command injection payloads from PayloadsAllTheThings'
+  # Command Injection page, covering encoding-bypass and quote-splitting
+  # evasion techniques not present in the SecLists set. See
+  # training/parsers/parse_patt_cmdi_curated.py for the curation rationale.
+  # Raw label field is already canonical ("cmdi").
+  patt_cmdi_curated:
+    cmdi: cmdi

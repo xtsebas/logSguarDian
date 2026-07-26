@@ -6,7 +6,7 @@
  * to emit a synthetic WorkerResponse so applyPolicy() can be exercised.
  *
  * RF_CLASSES order: ["benign", "cmdi", "path_traversal", "sqli", "xss"]
- * IF_THRESHOLD = 0.004463624698915758  (below → anomaly)
+ * IF_THRESHOLD = 0.00332745  (below → anomaly)
  */
 import * as http from "http";
 import * as net from "net";
