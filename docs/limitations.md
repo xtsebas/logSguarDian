@@ -121,6 +121,95 @@ remediarse retroactivamente.
 
 See `training/DEDUP_METHODOLOGY.md` for full methodology detail and gap quantification.
 
+### 5.1 MinHash/LSH investigation (2026) — scale quantified, remediation still open
+
+An investigation into replacing the Levenshtein approach with MinHash + LSH
+(`datasketch`, k=2 shingles, threshold=0.70, calibrated against a 20-pair
+length-stratified validation set — see below) confirmed MinHash is a viable
+*detection* mechanism: no length cutoff is needed (shingle-based similarity
+works at any length), and it comfortably outperforms the old approach's
+speed characteristics on small-to-medium classes. It does **not**, on its
+own, close gap (b) — see the incomplete-coverage finding below.
+
+**Byproduct: a real detection-bypass bug found and fixed.** Payload
+extraction for this investigation initially reused the same `query`-only
+field as the old Levenshtein method, which surfaced that `deriveRawPayload`
+(the same function used at training time and by `worker.ts` on every live
+request) discarded `path`'s attack signal whenever `query` was merely
+non-empty — regardless of content (e.g. a WordPress-style `ver=4.9.5`
+silently winning over a real injected path). Fixed via score-based
+candidate selection (`scoreAttackSignal`/`scoreAttackSignalWithDecoding`,
+`packages/extractor/src/attack-signal-score.ts`) — 11,595 corpus rows
+(3.06%) and any live request shaped the same way were affected. See the
+PR that landed this fix for full detail; it is independent of, and a
+prerequisite for, the dedup numbers below (the near-dup scan now runs on
+the corrected field).
+
+**Confirmed: genuine, extensive near-duplication — not a detection
+artifact.** On the corrected field, three classes completed a full-corpus
+direct-pairwise scan (k=2, threshold=0.70, no union-find/transitive
+clustering — an earlier attempt at clustering was abandoned after it
+produced obvious chaining artifacts, e.g. 86 "clusters" covering 98% of a
+class):
+
+| Class | n | Direct pairs | avg neighbors/item | max neighbors | Saturation (pairs/n) |
+|-------|--:|--------------:|--------------------:|---------------:|----------------------:|
+| xss | 29,897 | 1,830,599 | 122.5 | 1,039 | 61.2x |
+| cmdi | 5,554 | 290,481 | 104.6 | 438 | 52.3x |
+| path_traversal | 16,839 | 545,740 | 64.8 | 430 | 32.4x |
+
+Two hypotheses were tested empirically before trusting these numbers:
+(A) genuine template-based duplication vs (B) threshold/shingle-size
+miscalibration producing spurious matches on short strings. Evidence
+supports (A): the highest-neighbor item (1,039 matches) and its neighbors
+are a real, repeated `capec` payload template (a `chr()`-based PHP object
+injection, varying only in path prefix and quote-breakout character);
+median payload lengths for xss (86) and path_traversal (112) are well
+above the range where short-string shingle noise would dominate; and
+increasing shingle size (k=2→4) only mildly reduced the match rate
+(122→98→103 neighbors/item) rather than collapsing it, the signature of
+real duplication rather than a coincidental short-shingle match. CAPEC's
+template-based payload generation is the primary source.
+
+**Not measured: `sqli` (60% of the corpus) and `benign`.** The `sqli`
+class did not complete a full-corpus scan in reasonable time (killed
+after 1h47m of degrading throughput) despite completing the smaller
+classes in seconds. Subset-scaling diagnostics on `sqli` itself
+(n=5,000/20,000/50,000) showed query time growing faster than the row
+count between the two largest subsets tested (2.5x rows → ~4x query time)
+and average-neighbors-per-item still climbing at the largest subset
+tested (211 → 260 → 342, not yet plateaued) — consistent with `sqli`
+being at least as saturated as the three completed classes, likely more
+so (matching an earlier finding of 40,310 pairs in just a 10,000-row
+`sqli` sample at threshold=0.9). Getting a reliable full-corpus number for
+`sqli`/`benign` requires dedicated LSH engineering (explicit banding
+parameter tuning, chunked/streaming processing) not completed in this
+investigation.
+
+**Decision: flag-only, do not deduplicate, for the v9 batch.** Two
+reasons, not just consistency with the existing policy:
+1. Actual deduplication (removing rows, not just flagging pairs) is a
+   corpus-reshaping decision that changes class balance and training
+   volume — its own retraining-strategy decision, not something to bundle
+   into a batch alongside unrelated feature/threshold changes.
+2. We do not have complete, reliable duplication numbers for `sqli`
+   (60% of the corpus) or `benign`. Deciding how aggressively to
+   deduplicate without knowing the true scale for the majority of the
+   corpus would be worse than deferring the decision entirely.
+
+This investigation **extends** the original limitation rather than
+closing it: the true scale of near-duplication is now quantified and
+confirmed genuine for 3/5 classes (30–120x saturation — dramatically
+larger than the old method's 211 total flagged pairs, which suffered from
+both the 100-char cutoff and the 10,000-pair cap), the transitive-chaining
+false lead has been ruled out, and a real, independent bug
+(`deriveRawPayload`'s field-priority bypass) was found and fixed as a
+byproduct. Remediation — whether and how to actually deduplicate,
+and the LSH engineering needed to get reliable numbers for `sqli`/
+`benign` — remains future work, tracked here rather than in
+`training/DEDUP_METHODOLOGY.md` (that file describes the superseded
+Levenshtein methodology only).
+
 ---
 
 ## 6. Blank `method`/`path` Training Artifact (found via F5.7 E2E suite) — RESOLVED
