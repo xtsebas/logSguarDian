@@ -124,12 +124,11 @@ describe("E2E Detection Suite (PLAN.md F5.7 GATE)", () => {
     expect(res.status).not.toBe(403);
   }, 15000);
 
-  test("benign multi-field post is not blocked (no threshold stopgap needed, v8)", async () => {
-    // Regression: extractBestPayload's tie-break bug (fixed in the tie-break
-    // PR) plus sqli_operator_count matching benign key=value form syntax
-    // (fixed by non_form_operator_count, v8) together caused this to score
-    // sqli. v8 resolves it at the feature level — the model predicts benign
-    // outright, so no per-class or elevated threshold is needed at 0.35.
+  test("benign multi-field post is not blocked (per-class threshold)", async () => {
+    // Regression: extractBestPayload tie-break picked the first field instead
+    // of the whole body, scoring this as sqli at a confidence that cleared the
+    // old global RF_THRESHOLD. Per-class thresholds (docs/decision-policy.md §3)
+    // raise the sqli bar enough to pass it without weakening true sqli detection.
     const res = await request(app)
       .post("/posts")
       .type("form")

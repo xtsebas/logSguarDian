@@ -29,8 +29,21 @@ import type {
   WorkerResponse,
 } from "./types";
 
-const RF_THRESHOLD = 0.35;
-const IF_THRESHOLD = 0.004463624698915758;
+// Per-class thresholds calibrated on val + E2E test set (docs/decision-policy.md §3).
+// Only sqli's threshold moves off the legacy 0.35 global default: short benign
+// multi-field forms and short sqli payloads overlap in feature space just above
+// 0.35 confidence, so sqli alone needed raising to clear that overlap. Raising
+// xss/path_traversal/cmdi too (as a val-only sweep suggested) cost detection
+// rate on E2E without any measurable FP benefit, so they stay at baseline.
+const RF_THRESHOLDS: Record<AttackClass, number> = {
+  benign: 0,
+  sqli: 0.45,
+  xss: 0.35,
+  path_traversal: 0.35,
+  cmdi: 0.35,
+};
+const DEFAULT_THRESHOLD = 0.35;
+const IF_THRESHOLD = 0.006939247795563042;
 const RF_CLASSES: AttackClass[] = ["benign", "cmdi", "path_traversal", "sqli", "xss"];
 
 const DEFAULT_TIMEOUT_MS = 50;
@@ -40,7 +53,8 @@ let _requestId = 0;
 
 export function logsguardian(options: MiddlewareOptions = {}): RequestHandler {
   const mode = options.mode ?? "block";
-  const rfThreshold = options.threshold ?? RF_THRESHOLD;
+  // options.threshold, if set, overrides every class threshold (simple global override).
+  const userThreshold = options.threshold;
   const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
   const modelDir = options.modelDir ?? DEFAULT_MODEL_DIR;
   const webhookUrl = options.webhookUrl;
@@ -109,9 +123,10 @@ export function logsguardian(options: MiddlewareOptions = {}): RequestHandler {
     const confidence = rfProbs[maxIdx];
     const is_attack = predicted_class !== "benign";
     const is_anomaly = ifScore < IF_THRESHOLD;
+    const threshold = userThreshold ?? RF_THRESHOLDS[predicted_class] ?? DEFAULT_THRESHOLD;
 
     let verdict: Verdict;
-    if (is_attack && confidence >= rfThreshold) {
+    if (is_attack && confidence >= threshold) {
       verdict = "block";
     } else if (is_anomaly) {
       verdict = "pass_anomaly";

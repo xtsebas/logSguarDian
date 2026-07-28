@@ -5,17 +5,11 @@
  * sessions alive for the process lifetime. Receives WorkerRequest messages
  * from the parent, runs inference, and replies with WorkerResponse messages.
  *
- * Feature reduction (v8): RF and IF no longer share one input vector.
- *   - RF gets 67 features: the 73-feature vector from @logsguardian/extractor
- *     minus the 6 runtime-behavioral features (status_code, req_count_*,
- *     error_rate_4xx_60s, endpoint_diversity_60s), unavailable at request
- *     interception time.
- *   - IF gets 61 features: RF's 67 minus 6 further features confirmed to
- *     have zero/near-zero variance on benign traffic (dotdot_encoded_count,
- *     authorization_length, unusual_headers_count, null_byte_count,
- *     os_path_indicator, sensitive_file_target) — dead weight for anomaly
- *     detection, dropped to stabilize IsolationForest's run-to-run variance.
- * Both reductions are by feature name, not index. See docs/decision-policy.md §4.
+ * Feature reduction: the 73-feature vector from @logsguardian/extractor is
+ * reduced to 66 by dropping the 6 runtime-behavioral features plus
+ * non_form_operator_count (not yet in rf_v7/if_v6, added ahead of the v8
+ * retrain — see semantic.ts) by name (not by index) before passing to the
+ * ONNX models. See docs/decision-policy.md §4.
  */
 import { parentPort, workerData } from "worker_threads";
 import * as ort from "onnxruntime-node";
@@ -33,6 +27,8 @@ const EXCLUDED_NAMES = new Set([
   "req_count_60s",
   "error_rate_4xx_60s",
   "endpoint_diversity_60s",
+  // Not yet trained into rf_v7/if_v6 — exclude until the v8 retrain picks it up.
+  "non_form_operator_count",
 ]);
 
 const IF_ADDITIONAL_EXCLUDED = new Set([
