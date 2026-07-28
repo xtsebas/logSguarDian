@@ -20,6 +20,7 @@ import {
   computeCommandInjectionFeatures,
 } from "./semantic";
 import { extractBestPayload } from "./body-parser";
+import { scoreAttackSignalWithDecoding } from "./attack-signal-score";
 
 export * from "./types";
 
@@ -76,8 +77,9 @@ const TEMPORAL_FEATURES: Record<string, number> = {
 
 /**
  * rawPayload: el campo sobre el que operan los grupos 1-7 (excepto las
- * longitudes especificas de uri/query/body). Prioridad documentada en
- * CANONICAL_REQUEST_NOTES.md seccion 6: body > query > path.
+ * longitudes especificas de uri/query/body). Diseno documentado en
+ * CANONICAL_REQUEST_NOTES.md seccion 5 (Gap 1): "rawPayload = the
+ * highest-signal text field available."
  *
  * When the body is a multi-field urlencoded form, an attack payload in
  * one field gets diluted by benign fields when the whole body string is
@@ -86,11 +88,40 @@ const TEMPORAL_FEATURES: Record<string, number> = {
  * strongest attack signal instead of the raw key=value&key=value string —
  * this matches the shape of the training corpus, which is raw attack
  * payloads (no key name, no encoding), not urlencoded form bodies.
+ *
+ * body/query/path candidates are then scored with the same
+ * scoreAttackSignal() formula and the highest-signal one wins — a fixed
+ * body > query > path priority previously discarded path's attack signal
+ * whenever query was merely non-empty (e.g. a WordPress-style
+ * `?ver=4.9.5` attached to a genuinely malicious path), a real
+ * detection-bypass bug affecting both training data and live requests.
+ * Ties (including the common all-zero-score benign case) resolve to the
+ * original body > query > path order — score-based selection only
+ * overrides priority when a candidate STRICTLY outscores the others,
+ * so the fix cannot silently discard the highest-signal candidate the
+ * way the earlier form-field tie-break bug did.
  */
 export function deriveRawPayload(req: CanonicalRequest): string {
-  if (req.body.length > 0) return extractBestPayload(req.body);
-  if (req.query.length > 0) return req.query;
-  return req.path;
+  const bodyPayload = req.body.length > 0 ? extractBestPayload(req.body) : "";
+
+  const candidates: string[] = [];
+  if (bodyPayload.length > 0) candidates.push(bodyPayload);
+  if (req.query.length > 0) candidates.push(req.query);
+  if (req.path.length > 1) candidates.push(req.path);
+
+  if (candidates.length === 0) return req.path;
+  if (candidates.length === 1) return candidates[0];
+
+  let best = candidates[0];
+  let bestScore = scoreAttackSignalWithDecoding(candidates[0]);
+  for (let i = 1; i < candidates.length; i++) {
+    const score = scoreAttackSignalWithDecoding(candidates[i]);
+    if (score > bestScore) {
+      bestScore = score;
+      best = candidates[i];
+    }
+  }
+  return best;
 }
 
 /**

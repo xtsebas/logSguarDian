@@ -13,7 +13,7 @@
  * produces the highest attack score. This matches the training corpus
  * shape (raw HTML/SQL/shell payloads, no key name, no encoding).
  */
-import { computeXssFeatures, computeSqliFeatures, computeCommandInjectionFeatures } from "./semantic";
+import { scoreAttackSignal } from "./attack-signal-score";
 
 /**
  * Parse urlencoded body into field key-value pairs.
@@ -63,22 +63,9 @@ export function extractBestPayload(body: string): string {
     // Score this field value using count-based features (not density),
     // since counts are invariant to how long the surrounding string is —
     // density would just reintroduce the dilution problem within a single
-    // field's scoring.
-    const xss = computeXssFeatures(value);
-    const sqli = computeSqliFeatures(value);
-    const cmdi = computeCommandInjectionFeatures(value);
-
-    const score =
-      (xss.xss_marker_count || 0) +
-      (xss.script_tag_present || 0) * 2 +
-      (xss.js_event_handler_count || 0) +
-      (xss.alert_function_present || 0) +
-      (sqli.sqli_keyword_count || 0) +
-      (sqli.sqli_operator_count || 0) +
-      (sqli.union_present || 0) * 2 +
-      (cmdi.shell_command_count || 0) +
-      (cmdi.command_separator_count || 0) +
-      (cmdi.subshell_count || 0);
+    // field's scoring. Shared with deriveRawPayload (index.ts) so both
+    // call sites use the exact same formula — see attack-signal-score.ts.
+    const score = scoreAttackSignal(value);
 
     if (score > bestScore) {
       bestScore = score;

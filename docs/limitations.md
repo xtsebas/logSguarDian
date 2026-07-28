@@ -42,6 +42,52 @@ alternatives are: (a) architectures with more compact representations (XGBoost,
 LightGBM); (b) additional features that improve cmdi separability (e.g. shell token
 sequence analysis on the raw payload).
 
+### 1.1 Real diverse data (v9) — the SMOTE ceiling broke, with a nuance
+
+**The hypothesis behind this experiment**: SMOTE's failure showed *sample count*
+wasn't the problem, but that left open whether *genuine technique diversity*
+(not synthetic interpolation between existing points) could open the feature-space
+regions SMOTE couldn't reach. v9 added 2,470 real cmdi payloads from two public
+sources — SecLists' `command-injection-commix.txt` (2,455 samples, deduplicated
+to one representative per structural template) and 15 hand-curated
+PayloadsAllTheThings payloads — verified via MinHash (threshold=0.70) to have
+**0% near-duplicate overlap** with the existing 5,554-sample cmdi corpus, i.e.
+genuinely different techniques (subshell/backtick splitting, `tr`/`xxd`
+hex-encoding bypasses, quote-splitting evasion, DNS exfiltration, blind
+character-oracle extraction, polyglot payloads), not more points near existing
+ones. This grew the cmdi class 44.5% (5,554 → 8,024 samples) without touching
+SMOTE, sample weighting, or model architecture.
+
+**Result: the ceiling broke, cleanly, on both models.**
+
+| Metric | v7/v8 (SMOTE-era ceiling) | v9 (real diverse data) |
+|--------|---------------------------|--------------------------|
+| RF cmdi F1 (val) | 0.89–0.90 | **0.9369** |
+| RF cmdi F1 (test, R2) | — | **0.9342** (consistent with val — not overfitting) |
+| RF macro F1 (val) | 0.9691 (v8) | **0.9810** |
+| IF cmdi recall (val) | 0.9400 (v8) | **0.9443** |
+
+Where SMOTE moved cmdi F1 by +0.015 and only at shallow depths, real diverse data
+moved it by **+0.03 to +0.05** at the production depth (25), and the gain held
+identically on the held-out test set — the opposite of the interpolation problem
+SMOTE had, where synthetic vectors created feature combinations no real attack
+would produce. This is a genuine confirmation of the original diagnosis: the
+separability problem was about the *training distribution's technique coverage*,
+not about having more samples of the same techniques.
+
+**The nuance — offline gain did not show up in the small live E2E fixture.**
+The 100-payload E2E cmdi fixture (`e2e/fixtures/test_payloads.jsonl`, unchanged
+across v7–v9) stayed flat-to-slightly-down: 97% (v8) → 96% (v9), a one-sample
+difference at this fixture size, within noise. This does not contradict the
+test-set result — it reflects the E2E fixture's small, fixed sample effectively
+being near a detection ceiling already, while the offline test set (1,203 cmdi
+samples, comprehensive and drawn from the same distribution the new data
+targets) has the statistical resolution to show the real improvement. The
+practical implication: the E2E suite's 100-payload-per-class fixtures are useful
+as a fast smoke-level regression gate but are not sized to detect improvements
+of this magnitude — the test-set F1 is the trustworthy signal here, consistent
+with why R2 test-set reads exist as the authoritative metric in this project.
+
 ---
 
 ## 2. ONNX Runtime Memory Expansion Factor
@@ -168,6 +214,95 @@ remediarse retroactivamente.
 
 See `training/DEDUP_METHODOLOGY.md` for full methodology detail and gap quantification.
 
+### 5.1 MinHash/LSH investigation (2026) — scale quantified, remediation still open
+
+An investigation into replacing the Levenshtein approach with MinHash + LSH
+(`datasketch`, k=2 shingles, threshold=0.70, calibrated against a 20-pair
+length-stratified validation set — see below) confirmed MinHash is a viable
+*detection* mechanism: no length cutoff is needed (shingle-based similarity
+works at any length), and it comfortably outperforms the old approach's
+speed characteristics on small-to-medium classes. It does **not**, on its
+own, close gap (b) — see the incomplete-coverage finding below.
+
+**Byproduct: a real detection-bypass bug found and fixed.** Payload
+extraction for this investigation initially reused the same `query`-only
+field as the old Levenshtein method, which surfaced that `deriveRawPayload`
+(the same function used at training time and by `worker.ts` on every live
+request) discarded `path`'s attack signal whenever `query` was merely
+non-empty — regardless of content (e.g. a WordPress-style `ver=4.9.5`
+silently winning over a real injected path). Fixed via score-based
+candidate selection (`scoreAttackSignal`/`scoreAttackSignalWithDecoding`,
+`packages/extractor/src/attack-signal-score.ts`) — 11,595 corpus rows
+(3.06%) and any live request shaped the same way were affected. See the
+PR that landed this fix for full detail; it is independent of, and a
+prerequisite for, the dedup numbers below (the near-dup scan now runs on
+the corrected field).
+
+**Confirmed: genuine, extensive near-duplication — not a detection
+artifact.** On the corrected field, three classes completed a full-corpus
+direct-pairwise scan (k=2, threshold=0.70, no union-find/transitive
+clustering — an earlier attempt at clustering was abandoned after it
+produced obvious chaining artifacts, e.g. 86 "clusters" covering 98% of a
+class):
+
+| Class | n | Direct pairs | avg neighbors/item | max neighbors | Saturation (pairs/n) |
+|-------|--:|--------------:|--------------------:|---------------:|----------------------:|
+| xss | 29,897 | 1,830,599 | 122.5 | 1,039 | 61.2x |
+| cmdi | 5,554 | 290,481 | 104.6 | 438 | 52.3x |
+| path_traversal | 16,839 | 545,740 | 64.8 | 430 | 32.4x |
+
+Two hypotheses were tested empirically before trusting these numbers:
+(A) genuine template-based duplication vs (B) threshold/shingle-size
+miscalibration producing spurious matches on short strings. Evidence
+supports (A): the highest-neighbor item (1,039 matches) and its neighbors
+are a real, repeated `capec` payload template (a `chr()`-based PHP object
+injection, varying only in path prefix and quote-breakout character);
+median payload lengths for xss (86) and path_traversal (112) are well
+above the range where short-string shingle noise would dominate; and
+increasing shingle size (k=2→4) only mildly reduced the match rate
+(122→98→103 neighbors/item) rather than collapsing it, the signature of
+real duplication rather than a coincidental short-shingle match. CAPEC's
+template-based payload generation is the primary source.
+
+**Not measured: `sqli` (60% of the corpus) and `benign`.** The `sqli`
+class did not complete a full-corpus scan in reasonable time (killed
+after 1h47m of degrading throughput) despite completing the smaller
+classes in seconds. Subset-scaling diagnostics on `sqli` itself
+(n=5,000/20,000/50,000) showed query time growing faster than the row
+count between the two largest subsets tested (2.5x rows → ~4x query time)
+and average-neighbors-per-item still climbing at the largest subset
+tested (211 → 260 → 342, not yet plateaued) — consistent with `sqli`
+being at least as saturated as the three completed classes, likely more
+so (matching an earlier finding of 40,310 pairs in just a 10,000-row
+`sqli` sample at threshold=0.9). Getting a reliable full-corpus number for
+`sqli`/`benign` requires dedicated LSH engineering (explicit banding
+parameter tuning, chunked/streaming processing) not completed in this
+investigation.
+
+**Decision: flag-only, do not deduplicate, for the v9 batch.** Two
+reasons, not just consistency with the existing policy:
+1. Actual deduplication (removing rows, not just flagging pairs) is a
+   corpus-reshaping decision that changes class balance and training
+   volume — its own retraining-strategy decision, not something to bundle
+   into a batch alongside unrelated feature/threshold changes.
+2. We do not have complete, reliable duplication numbers for `sqli`
+   (60% of the corpus) or `benign`. Deciding how aggressively to
+   deduplicate without knowing the true scale for the majority of the
+   corpus would be worse than deferring the decision entirely.
+
+This investigation **extends** the original limitation rather than
+closing it: the true scale of near-duplication is now quantified and
+confirmed genuine for 3/5 classes (30–120x saturation — dramatically
+larger than the old method's 211 total flagged pairs, which suffered from
+both the 100-char cutoff and the 10,000-pair cap), the transitive-chaining
+false lead has been ruled out, and a real, independent bug
+(`deriveRawPayload`'s field-priority bypass) was found and fixed as a
+byproduct. Remediation — whether and how to actually deduplicate,
+and the LSH engineering needed to get reliable numbers for `sqli`/
+`benign` — remains future work, tracked here rather than in
+`training/DEDUP_METHODOLOGY.md` (that file describes the superseded
+Levenshtein methodology only).
+
 ---
 
 ## 6. Blank `method`/`path` Training Artifact (found via F5.7 E2E suite) — RESOLVED
@@ -227,3 +362,63 @@ these misses is 0.50–0.67 (below the 0.70 block threshold but still leaning
 xss, not confidently benign), suggesting the extractor's pattern features do
 not currently recognize HTML-entity encoding as an XSS obfuscation technique.
 This is an evasion gap in the feature set, not a model capacity problem.
+
+### 7.1 Recursive decode for double-encoded and unicode-escaped XSS — RESOLVED (unicode-escape, double-percent); HTML-entity confirmed not a real gap
+
+The single-pass decode above (§7) only resolves one layer of encoding.
+Investigation into three candidate evasion patterns — double HTML-entity
+(`&amp;lt;script&amp;gt;`), double percent (`%253Cscript%253E`), and
+JavaScript unicode escapes (`<script>`) — found the practical picture
+is not "three equal gaps," once each is tested with genuinely full-string
+obfuscation rather than the tag-delimiters-only obfuscation an earlier
+synthetic fixture used by mistake (which inflated two categories to a
+false 100% baseline):
+
+- **Unicode-escape: a genuine, now-closed gap.** `\uXXXX` sequences are
+  interpreted by the JS engine itself at parse time, so an attacker can
+  legitimately unicode-escape an entire payload — including the callable
+  (`alert(1)`) — and it still executes once decoded. Baseline detection on
+  a corrected 120-record fixture (every character escaped): **0% → 100%**
+  after adding `decodeUnicodeEscapes` to a bounded recursive wrapper
+  (`normalizeForXssDetection`, `packages/extractor/src/normalizers.ts`).
+- **Double-percent: real, and resolved better than expected.** RFC 3986's
+  unreserved character set (letters, digits, `. - _ ~`) is never
+  percent-encoded, so any trigger substring made purely of those characters
+  (`document.cookie`) survives percent-encoding at any depth — a structural
+  ceiling, not a fixture flaw. Baseline **50% → 100%** after the fix:
+  recursive percent-decoding resolves the *other* half too (payloads whose
+  trigger relies on `<`, `>`, `(`, `)`, `=`, `:`, which do get encoded).
+- **Double HTML-entity: confirmed not a practical gap.** HTML-entity
+  decoding only happens during HTML *parsing* — never inside JS execution
+  context — so an attacker who entity-encodes the callable itself
+  (`alert(1)` → `&#97;&#108;...`) breaks their own exploit; it no longer
+  executes as valid JavaScript. Realistic entity-based evasion can therefore
+  only ever obscure the tag delimiters (`<`, `>`), never the payload
+  content, and that content (`alert(`, `onerror=`) remains a separately
+  matched signal regardless of whether the surrounding tag is decoded. A
+  synthetic fixture that fully obfuscated every character still measured
+  **100% → 100%** (no fixture-level movement) — not because the fix doesn't
+  work, but because this category isn't a real gap once the model already
+  matches on the callable independent of the tag. The one genuine narrow
+  case — a payload with *no* separately-exposed keyword at all (e.g.
+  `<script>x()</script>` entity-encoded) — did move, **0/0 → 2/2**,
+  confirming the fix is still correct and harmless to include.
+
+**Scope discipline preserved**: the recursive decode applies only inside
+`computeXssFeatures` — `html_entity_density` and `url_encoded_ratio` still
+measure the raw, undecoded payload (the obfuscation-density signal these
+features exist for would be destroyed if they read the decoded string).
+Bounded to `maxDepth=5`; measured at 2.12ms for a 110KB pathological input,
+well inside the 50ms fail-open timeout — no DoS risk from the depth cap.
+FEATURE_NAMES count is unchanged at 73 (this changes what string feeds
+`computeXssFeatures`, not the feature schema).
+
+**Train/serve skew — flagged, not yet retrained.** 187/29,897 real xss
+corpus rows (0.625%) show a different `xss_marker_count` under the new
+decode logic versus what rf_v8/if_v7 were trained on (mostly real
+double-percent-encoded payloads already present in `owasp_logs`). Small,
+but consistent with this project's established practice of retraining after
+any extractor change that shifts feature values. Not retrained yet —
+intentionally batched into a planned v9 cycle alongside other pending
+changes (MinHash near-duplicate dedup, real cmdi data) rather than
+retraining per isolated change.
