@@ -48,8 +48,14 @@ export function extractBestPayload(body: string): string {
   // Single field or not urlencoded: use whole body as before.
   if (!fields) return body;
 
-  let bestValue = body; // fallback, only used if every field is too short to score
-  let bestScore = -1;
+  // Fallback stays the whole body unless some field actually scores > 0.
+  // (Previously started at -1, so when every field legitimately scored 0 —
+  // the ordinary case for benign multi-field forms like login or new-post —
+  // the first field in iteration order won by default. A bare few-character
+  // field value (e.g. a username) then stood in for the entire request in
+  // every downstream feature, which the model reads as attack-shaped.)
+  let bestValue = body;
+  let bestScore = 0;
 
   for (const [, value] of fields) {
     if (!value || value.length < 2) continue;

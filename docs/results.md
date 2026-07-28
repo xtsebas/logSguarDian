@@ -470,3 +470,127 @@ gate; not investigated further.)
 A one-time R2 confirmation read of the test set at this threshold is still
 pending — tracked in `docs/decision-policy.md` §6 (P1).
 
+---
+
+## F3.6 — Leave-One-Source-Out Validation (LOSO)
+
+**Methodology:** for each of the 9 raw data sources in `training/data_clean/`,
+train an RF classifier (same config as rf_v7: n_estimators=30, max_depth=25,
+class_weight=balanced_subsample) on every OTHER source's full data, then
+evaluate exclusively on the excluded source's full data (not the official
+train/val/test split — the whole source is held out). This measures whether
+the model has learned transferable attack/benign patterns or source-specific
+artifacts. Throwaway models only — rf_v7.pkl and the official split are
+untouched. Script: `training/loso_validation.py`. Results:
+`training/models/loso_results.json`.
+
+| Source | Rows | Classes present | Macro F1 (LOSO) | Interpretation |
+|--------|-----:|------------------|-----------------|----------------|
+| command_injection | 2,105 | benign, cmdi | 0.7762 | Moderate degradation |
+| synthetic_multifield | 598 | cmdi, sqli, xss | 0.4758 | Poor generalization |
+| payloads_csv | 21,624 | benign, xss | 0.5439 | Poor generalization |
+| xss_dataset | 13,570 | benign, xss | 0.4063 | Poor generalization |
+| payload_full | 31,067 | benign, cmdi, path_traversal, sqli, xss | 0.3612 | Poor generalization |
+| owasp_logs | 56,399 | cmdi, path_traversal, sqli, xss | 0.2815 | Poor generalization |
+| modsec_learn | 539,074 | benign, sqli | 0.1838 | Poor generalization |
+| capec | 289,287 | cmdi, path_traversal, sqli, xss | 0.1671 | Poor generalization |
+| synthetic_nav | 5,150 | benign | 0.0027 | Poor generalization |
+
+**Findings: the corpus is dominated by 1–2 "mega-sources" per class, not a
+diverse pool of interchangeable sources.** Per-class share of the full corpus:
+
+| Class | Dominant source(s) | Share |
+|-------|--------------------|------:|
+| benign | modsec_learn | 92.9% |
+| sqli | capec | 84.6% |
+| cmdi | capec + owasp_logs | 92.0% combined |
+| path_traversal | owasp_logs + capec | 99.6% combined |
+| xss | payloads_csv + capec + xss_dataset | 96.8% combined |
+
+Holding out `capec` or `modsec_learn` therefore does not simulate "a new,
+unseen source of similar diversity" — it removes 85–93% of a class's entire
+training signal, which is why every LOSO score is far below rf_v7's in-corpus
+macro F1 (0.9682, §2.1 `decision-policy.md`). `synthetic_nav`'s catastrophic
+0.0027 is the clearest single artifact: it is a synthetic, template-generated
+benign navigation set with a payload style (structured, low-entropy,
+repetitive paths) that none of the other five benign-containing sources
+(scraped/production traffic, curated payload lists) reproduce — without it in
+training, the model has never seen that shape of benign request and
+misclassifies nearly all of it as an attack. The same mechanism explains
+`command_injection`'s comparatively better cmdi F1 (0.6014): its style
+overlaps enough with capec/owasp_logs's cmdi patterns (which remain in
+training) that losing this smaller, 514-row source is a minor perturbation
+rather than the removal of the class's primary signal.
+
+**Implication for production: this weakens, not supports, an unqualified
+generalization claim.** rf_v7's strong test-set numbers (macro F1 0.9682)
+reflect that the official train/val/test split keeps a representative slice
+of every source — including capec and modsec_learn — in the training set.
+LOSO shows that if a genuinely novel attack source (styled unlike anything in
+capec, modsec_learn, owasp_logs, etc.) appeared in production, detection
+would likely degrade sharply rather than transfer the way the test-set
+numbers imply. This is a corpus-diversity limitation, not a bug in the model
+or the split: see `docs/limitations.md` §4 for the resulting scope statement.
+
+### F3.6.1 — Volume starvation vs. genuine generalization failure
+
+The finding above (mega-sources dominate each class) suggests volume loss,
+not distributional novelty, drives most of the LOSO degradation. Testing
+this directly: correlate each source's LOSO macro F1 against that source's
+share of its dominant class in the full corpus.
+
+| Source | LOSO F1 | Dominant class | Share of that class |
+|--------|--------:|-----------------|---------------------:|
+| capec | 0.1671 | sqli | 84.6% |
+| command_injection | 0.7762 | cmdi | 5.7% |
+| modsec_learn | 0.1838 | benign | 92.9% |
+| owasp_logs | 0.2815 | path_traversal | 69.8% |
+| payload_full | 0.3612 | sqli | 3.7% |
+| payloads_csv | 0.5439 | xss | 40.6% |
+| synthetic_multifield | 0.4758 | cmdi | 1.3% |
+| synthetic_nav | 0.0027 | benign | 0.9% |
+| xss_dataset | 0.4063 | xss | 19.7% |
+
+**Pearson correlation (LOSO F1 vs. dominant-class share), all 9 sources:
+−0.375** — moderate, not the strong (< −0.6) confirmation that would let
+"volume starvation" stand as the sole explanation. Two sources break the
+volume-only story in opposite directions:
+
+- **`synthetic_nav` is a genuine generalization failure, not volume
+  starvation.** It holds the *smallest* class share of any source (0.9% of
+  benign) yet produces the *worst* LOSO score by a wide margin (0.0027). If
+  volume alone explained degradation, this low-share source should be one of
+  the *least* damaging to remove. Its outsized failure is explained instead
+  by its distinctive template-generated style (§F3.6 above): removing it
+  removes a whole style of benign request, not just a volume of examples.
+- **`command_injection` is a genuine generalization success, not volume
+  abundance.** It also holds a small class share (5.7% of cmdi) but produces
+  the *best* LOSO score of all 9 sources (0.7762). Its cmdi payloads
+  apparently overlap stylistically enough with capec/owasp_logs's cmdi
+  (which stay in training) that the model transfers to it almost as well as
+  if it had been included.
+
+Recomputing the correlation **excluding `synthetic_nav`** (the one clear
+outlier) gives **−0.744** across the remaining 8 sources — a strong
+confirmation that, once that one style-driven outlier is set aside, share
+of the dominant class *is* the primary driver of LOSO degradation for the
+rest of the corpus. The rank-based (Spearman) correlation across all 9
+stays weak (−0.167), because at the low-share end (`command_injection`,
+`synthetic_multifield`, `payload_full` — all under 6% share) the three
+sources land at F1 0.776, 0.476, and 0.361 respectively: nearly identical,
+tiny volumes but wildly different outcomes, confirming that *below* a
+certain share threshold, stylistic overlap with the remaining sources — not
+volume — decides the outcome.
+
+**Conclusion:** LOSO degradation is a mix of both mechanisms, not purely
+one. For most of the corpus (8 of 9 sources, −0.744 correlation), removing a
+source mainly removes volume, and the resulting F1 drop tracks how much of
+the class's signal that source alone supplied. But `synthetic_nav` shows the
+model can also fail to generalize for genuinely distributional reasons
+independent of volume — and `command_injection` shows the reverse, that
+low volume does not guarantee poor transfer when style overlaps with what
+remains. Both mechanisms belong in the limitations statement (§4 in
+`docs/limitations.md`): the corpus's lack of per-class source diversity is
+the primary risk, but style-specific blind spots (as demonstrated by
+`synthetic_nav`) are a distinct, independently-confirmed risk on top of it.
+
