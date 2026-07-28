@@ -31,14 +31,32 @@ const EXCLUDED_NAMES = new Set([
   "non_form_operator_count",
 ]);
 
-/** Positions in FEATURE_NAMES that the model actually expects (0-based, length=66). */
-const MODEL_INDICES: number[] = FEATURE_NAMES
+const IF_ADDITIONAL_EXCLUDED = new Set([
+  "dotdot_encoded_count",
+  "authorization_length",
+  "unusual_headers_count",
+  "null_byte_count",
+  "os_path_indicator",
+  "sensitive_file_target",
+]);
+
+/** Positions in FEATURE_NAMES that rf.onnx expects (0-based, length=67). */
+const RF_MODEL_INDICES: number[] = FEATURE_NAMES
   .map((name, i) => ({ name, i }))
   .filter(({ name }) => !EXCLUDED_NAMES.has(name))
   .map(({ i }) => i);
 
-if (MODEL_INDICES.length !== 66) {
-  throw new Error(`Expected 66 model feature indices, got ${MODEL_INDICES.length}`);
+/** Positions in FEATURE_NAMES that if.onnx expects (0-based, length=61). */
+const IF_MODEL_INDICES: number[] = FEATURE_NAMES
+  .map((name, i) => ({ name, i }))
+  .filter(({ name }) => !EXCLUDED_NAMES.has(name) && !IF_ADDITIONAL_EXCLUDED.has(name))
+  .map(({ i }) => i);
+
+if (RF_MODEL_INDICES.length !== 67) {
+  throw new Error(`Expected 67 RF model feature indices, got ${RF_MODEL_INDICES.length}`);
+}
+if (IF_MODEL_INDICES.length !== 61) {
+  throw new Error(`Expected 61 IF model feature indices, got ${IF_MODEL_INDICES.length}`);
 }
 
 const modelDir: string = (workerData as { modelDir: string }).modelDir;
@@ -69,12 +87,14 @@ parentPort!.on("message", async (msg: WorkerRequest) => {
   try {
     const { rfSession, ifSession } = sessions;
     const vector73 = extractFeatureVector(msg.canonical);
-    const input66 = Float32Array.from(MODEL_INDICES.map((i) => vector73[i]));
-    const tensor = new ort.Tensor("float32", input66, [1, 66]);
+    const rfInput = Float32Array.from(RF_MODEL_INDICES.map((i) => vector73[i]));
+    const ifInput = Float32Array.from(IF_MODEL_INDICES.map((i) => vector73[i]));
+    const rfTensor = new ort.Tensor("float32", rfInput, [1, 67]);
+    const ifTensor = new ort.Tensor("float32", ifInput, [1, 61]);
 
     const [rfResult, ifResult] = await Promise.all([
-      rfSession.run({ float_input: tensor }),
-      ifSession.run({ float_input: tensor }),
+      rfSession.run({ float_input: rfTensor }),
+      ifSession.run({ float_input: ifTensor }),
     ]);
 
     const rfProbs = Array.from(

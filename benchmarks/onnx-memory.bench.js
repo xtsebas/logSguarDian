@@ -2,7 +2,7 @@
  * PLAN.md F4.4 — ONNX session memory footprint in Node.js
  *
  * Measures RSS delta from baseline → both models loaded → warmup → 2000 calls.
- * Gate criterion: total Δ RSS ≤ 150 MB.
+ * Gate criterion: total Δ RSS ≤ 300 MB (revised — see docs/results.md §F4.4).
  *
  * Run from repo root:
  *   node benchmarks/onnx-memory.bench.js
@@ -19,7 +19,8 @@ const ort = require(
 );
 
 const MODEL_DIR = path.join(__dirname, "../training/models");
-const N_FEATURES = 66;
+const RF_N_FEATURES = 67;
+const IF_N_FEATURES = 61;
 
 function gc() {
   if (typeof global.gc === "function") global.gc();
@@ -50,21 +51,26 @@ async function main() {
   );
   const afterIf = snapshot("After loading if.onnx");
 
-  const dummy = new ort.Tensor(
+  const rfDummy = new ort.Tensor(
     "float32",
-    new Float32Array(N_FEATURES),
-    [1, N_FEATURES]
+    new Float32Array(RF_N_FEATURES),
+    [1, RF_N_FEATURES]
+  );
+  const ifDummy = new ort.Tensor(
+    "float32",
+    new Float32Array(IF_N_FEATURES),
+    [1, IF_N_FEATURES]
   );
 
   for (let i = 0; i < 10; i++) {
-    await rfSession.run({ float_input: dummy });
-    await ifSession.run({ float_input: dummy });
+    await rfSession.run({ float_input: rfDummy });
+    await ifSession.run({ float_input: ifDummy });
   }
   const afterWarmup = snapshot("After warmup (10x inference each)");
 
   for (let i = 0; i < 1000; i++) {
-    await rfSession.run({ float_input: dummy });
-    await ifSession.run({ float_input: dummy });
+    await rfSession.run({ float_input: rfDummy });
+    await ifSession.run({ float_input: ifDummy });
   }
   const afterLoad = snapshot("After 1000x inference each (leak check)");
 

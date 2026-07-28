@@ -4,7 +4,7 @@
  * On first call, spawns the worker_thread and opens the SQLite store. For
  * each request it:
  *   1. Extracts a CanonicalRequest from Express req
- *   2. Computes the 72-feature vector via @logsguardian/extractor
+ *   2. Computes the 73-feature vector via @logsguardian/extractor
  *   3. Sends it to the worker with a timeout
  *   4. Applies the decision policy (docs/decision-policy.md §3)
  *   5. In 'block' mode: sends HTTP 403 if verdict is 'block'

@@ -1,20 +1,17 @@
 {
-  "rf_onnx_path": "../../training/models/rf.onnx",
-  "if_onnx_path": "../../training/models/if.onnx",
-  "target_opset": 17,
-  "n_features": 66,
-  "parity_samples": 1000,
-  "rf_max_prob_diff": 9.818314805620787e-08,
-  "if_max_score_diff": 2.2457568149558682e-07,
+  "rf_n_features": 67,
+  "if_n_features": 61,
+  "rf_max_diff": 9.165910164199431e-08,
+  "if_max_diff": 2.0029616965011598e-07,
   "parity_passed": true,
-  "threshold_if": 0.006939247795563042,
-  "if_onnx_output_index": 1,
-  "rf_onnx_output_index": 1,
   "rf_classes": [
     "benign",
     "cmdi",
     "path_traversal",
     "sqli",
     "xss"
-  ]
+  ],
+  "threshold_if": 0.004463624698915758,
+  "rf_onnx_output_index": 1,
+  "if_onnx_output_index": 1
 }

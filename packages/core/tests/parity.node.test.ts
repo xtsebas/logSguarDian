@@ -7,12 +7,18 @@ describe("ONNX parity — Node vs Python (F4.3)", () => {
   const MODEL_DIR = path.join(__dirname, "../../../training/models");
   const TOLERANCE = 1e-5;
 
-  let fixture: { inputs: number[][]; rf_expected: number[][]; if_expected: number[] };
+  let fixture: {
+    rf_inputs: number[][];
+    if_inputs: number[][];
+    rf_expected: number[][];
+    if_expected: number[];
+  };
   let rfSession: ort.InferenceSession;
   let ifSession: ort.InferenceSession;
   let parityReport: {
     parity_passed: boolean;
-    n_features: number;
+    rf_n_features: number;
+    if_n_features: number;
     rf_onnx_output_index: number;
     if_onnx_output_index: number;
     rf_classes: string[];
@@ -28,17 +34,22 @@ describe("ONNX parity — Node vs Python (F4.3)", () => {
     ifSession = await ort.InferenceSession.create(path.join(MODEL_DIR, "if.onnx"));
   });
 
-  test("parity_report.json reports parity_passed=true and n_features=66", () => {
+  test("parity_report.json reports parity_passed=true, rf_n_features=67, if_n_features=61", () => {
     expect(parityReport.parity_passed).toBe(true);
-    expect(parityReport.n_features).toBe(66);
+    expect(parityReport.rf_n_features).toBe(67);
+    expect(parityReport.if_n_features).toBe(61);
   });
 
   test("RF: onnxruntime-node matches Python predict_proba within 1e-5", async () => {
     let maxDiff = 0;
     const outputName = rfSession.outputNames[parityReport.rf_onnx_output_index];
 
-    for (let i = 0; i < fixture.inputs.length; i++) {
-      const input = new ort.Tensor("float32", Float32Array.from(fixture.inputs[i]), [1, 66]);
+    for (let i = 0; i < fixture.rf_inputs.length; i++) {
+      const input = new ort.Tensor(
+        "float32",
+        Float32Array.from(fixture.rf_inputs[i]),
+        [1, parityReport.rf_n_features],
+      );
       const result = await rfSession.run({ float_input: input });
       const probs = result[outputName].data as Float32Array;
 
@@ -56,8 +67,12 @@ describe("ONNX parity — Node vs Python (F4.3)", () => {
     let maxDiff = 0;
     const outputName = ifSession.outputNames[parityReport.if_onnx_output_index];
 
-    for (let i = 0; i < fixture.inputs.length; i++) {
-      const input = new ort.Tensor("float32", Float32Array.from(fixture.inputs[i]), [1, 66]);
+    for (let i = 0; i < fixture.if_inputs.length; i++) {
+      const input = new ort.Tensor(
+        "float32",
+        Float32Array.from(fixture.if_inputs[i]),
+        [1, parityReport.if_n_features],
+      );
       const result = await ifSession.run({ float_input: input });
       const score = (result[outputName].data as Float32Array)[0];
 
@@ -80,6 +95,6 @@ describe("ONNX parity — Node vs Python (F4.3)", () => {
   });
 
   test("IF threshold is consistent with parity_report.threshold_if", () => {
-    expect(parityReport.threshold_if).toBeCloseTo(0.0069, 3);
+    expect(parityReport.threshold_if).toBeCloseTo(0.00446, 4);
   });
 });
