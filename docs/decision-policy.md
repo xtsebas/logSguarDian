@@ -295,6 +295,51 @@ if_v5 from if_v4. Both regressions are accepted together as the cost of
 fixing the multi-field XSS dilution bug (rf_v6), which is the higher-value
 fix: RF holds blocking authority and its numbers improved (see §4.x).
 
+#### 2.2.2 `extractBestPayload` tie-break fix (rf_v7, CLOSED) and a residual known FP
+
+`extractBestPayload()` (packages/extractor/src/body-parser.ts) originally
+initialized `bestScore = -1`. When every field in a multi-field body
+legitimately scored 0 (the ordinary case for benign forms — login, new
+post), the first field evaluated still "won" the comparison and was
+returned alone, standing in for the whole request in every downstream
+feature. A bare few-character field value (e.g. a username) then looked
+like an unusually short, structureless token — scoring as sqli.
+
+Fixed: `bestScore` now starts at `0`; nothing beats a genuine 0, so the
+fallback correctly stays the whole body when no field carries any signal.
+Field isolation for genuine attacks (score > 0) is unaffected — verified
+with the same corpus-shape test cases used for the original rf_v6 fix.
+
+Required a retrain (rf_v7/if_v6) since `synthetic_nav.jsonl` has 201
+benign multi-field records that were extracted under the buggy
+first-field behavior during rf_v6/if_v5 training — same train/serve
+skew logic as every other extractor change this cycle. Confirmed via a
+live classification check before and after: a legit `POST /login`
+(`username=alice&password=alice123`) moved from `sqli (0.52)` to
+`benign (0.50)` after the fix + retrain.
+
+**Residual known FP — not fixed, documented as a boundary limitation.**
+A legit multi-field POST with plain-English content (e.g.
+`POST /posts` with `title=Hello&content=Just a normal note`) still
+scores `sqli` at confidence ≈0.40 (just above `RF_THRESHOLD=0.35`).
+Root cause: `SQLI_OPERATOR_COUNT` (patterns.ts) matches a bare `=`, and
+ordinary `key=value&key=value` form syntax has exactly that — 2
+operators for a 2-field body. Investigated whether the regex could be
+scoped to exempt field-boundary `=`: **not viable**. The regex is used
+globally (query-string `deriveRawPayload` never goes through the
+body-parser at all), and on the training corpus, 99.1% of sqli rows
+have ≤3 operators and **37.4% of all sqli training rows rely on
+`sqli_operator_count` as their only nonzero SQLi-specific signal** —
+scoping the regex, even partially, would strip the sole discriminative
+feature from over a third of the sqli corpus. A narrower fix (a
+separate structural-syntax-stripped string for SQLi/XSS/CMDi matching
+in the whole-body-fallback case only, distinct from the raw string used
+for length features) was considered but rejected for this cycle: it
+contradicts the whole-body-length contract just shipped in this same
+change, and would require yet another retrain to validate. Left as a
+known model-boundary limitation — short benign multi-field forms and
+short SQLi payloads genuinely overlap in this region of feature space.
+
 ---
 
 ## 3. Decision Policy
