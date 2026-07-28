@@ -124,8 +124,55 @@ heuristic rather than semantic attack patterns.
 
 The system was trained on public datasets (CAPEC, ModSecurity, OWASP, payload
 corpora). Real production traffic may differ in length distribution, encoding,
-User-Agent patterns, and feature combinations. The leave-one-source-out validation
-(Task 3.6 in PLAN.md) is pending and will measure per-source degradation.
+User-Agent patterns, and feature combinations.
+
+Leave-one-source-out validation (Task 3.6 in PLAN.md) has been completed —
+see `docs/results.md` §F3.6 for the full table and methodology
+(`training/loso_validation.py`, `training/models/loso_results.json`). **0 of
+9 sources show macro F1 ≥ 0.80 when held out entirely**; only
+`command_injection` clears the ≥ 0.60 "moderate degradation" band (0.7762),
+and the remaining 8 fall in the 0.00–0.55 "poor generalization" band. This
+does **not** indicate the model is unable to detect attacks in general — its
+in-corpus test-set performance (macro F1 0.9682) is real and reproducible.
+It indicates instead that degradation comes from **two distinct,
+independently-confirmed mechanisms**, quantified in `docs/results.md`
+§F3.6.1 by correlating each source's LOSO F1 against its share of its
+dominant class:
+
+1. **Volume starvation (the primary driver for 8 of 9 sources).** One or two
+   sources supply 85–99% of the training signal for every class (capec:
+   84.6% of sqli; modsec_learn: 92.9% of benign; owasp_logs + capec: 99.6%
+   of path_traversal combined), so removing that source removes the class's
+   signal almost entirely rather than simulating exposure to a
+   merely-unfamiliar-but-comparable source. Excluding the one outlier below,
+   LOSO F1 correlates with dominant-class share at **−0.744** — strong
+   confirmation that share of the corpus, not novelty of style, explains
+   most of the degradation.
+2. **Genuine style-driven generalization failure (the `synthetic_nav`
+   outlier).** `synthetic_nav` holds the *smallest* class share of any
+   source (0.9% of benign) yet produces the *worst* LOSO score by a wide
+   margin (F1 0.0027) — the opposite of what volume alone predicts. It is a
+   template-generated benign set whose structured, low-entropy navigation
+   paths don't resemble any of the other benign sources; removing it removes
+   a whole *style* of benign request, not a meaningful volume of examples.
+   This is a real generalization blind spot, not a data-volume artifact.
+
+The reverse case also holds: `command_injection` has a similarly small
+class share (5.7% of cmdi) but the *best* LOSO score of all 9 sources
+(0.7762), because its cmdi payloads overlap stylistically with
+capec/owasp_logs's cmdi, which remain in training. Low volume alone does not
+predict poor transfer — style overlap with what remains does.
+
+**Practical implication:** the model's demonstrated generalization is bounded
+to the styles already represented in this corpus (CAPEC/ModSecurity/OWASP-style
+payloads, the synthetic benign/multifield sets, and the payload-list
+datasets), and is additionally exposed to at least one confirmed style-specific
+blind spot (`synthetic_nav`-shaped benign traffic) independent of how much of
+that style's volume is in training. A genuinely novel attack or benign source
+with an unfamiliar payload style should be expected to degrade detection
+substantially until re-training incorporates a sample of it — this system
+does not claim, and LOSO shows it should not be assumed, to generalize to
+arbitrary unseen traffic styles beyond what informed its training data.
 
 ---
 

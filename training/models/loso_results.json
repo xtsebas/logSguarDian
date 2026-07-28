@@ -1,0 +1,133 @@
+[
+  {
+    "held_out_source": "capec",
+    "n_rows": 289287,
+    "classes": [
+      "cmdi",
+      "path_traversal",
+      "sqli",
+      "xss"
+    ],
+    "macro_f1": 0.1671275683549609,
+    "per_class_f1": {
+      "cmdi": 0.14546768531901713,
+      "path_traversal": 0.15766891372609296,
+      "sqli": 0.35826375892507945,
+      "xss": 0.007109915449654112
+    }
+  },
+  {
+    "held_out_source": "command_injection",
+    "n_rows": 2105,
+    "classes": [
+      "benign",
+      "cmdi"
+    ],
+    "macro_f1": 0.7761733982295846,
+    "per_class_f1": {
+      "benign": 0.9509862522414824,
+      "cmdi": 0.601360544217687
+    }
+  },
+  {
+    "held_out_source": "modsec_learn",
+    "n_rows": 539074,
+    "classes": [
+      "benign",
+      "sqli"
+    ],
+    "macro_f1": 0.18377646996528946,
+    "per_class_f1": {
+      "benign": 0.3280140445005523,
+      "sqli": 0.03953889543002656
+    }
+  },
+  {
+    "held_out_source": "owasp_logs",
+    "n_rows": 56399,
+    "classes": [
+      "cmdi",
+      "path_traversal",
+      "sqli",
+      "xss"
+    ],
+    "macro_f1": 0.28145604479672254,
+    "per_class_f1": {
+      "cmdi": 0.006227296315516347,
+      "path_traversal": 0.739786111433621,
+      "sqli": 0.27523560803905983,
+      "xss": 0.10457516339869281
+    }
+  },
+  {
+    "held_out_source": "payload_full",
+    "n_rows": 31067,
+    "classes": [
+      "benign",
+      "cmdi",
+      "path_traversal",
+      "sqli",
+      "xss"
+    ],
+    "macro_f1": 0.3612374540162505,
+    "per_class_f1": {
+      "benign": 0.9215322984476715,
+      "cmdi": 0.017406784689941647,
+      "path_traversal": 0.0,
+      "sqli": 0.0003685277317118113,
+      "xss": 0.8668796592119276
+    }
+  },
+  {
+    "held_out_source": "payloads_csv",
+    "n_rows": 21624,
+    "classes": [
+      "benign",
+      "xss"
+    ],
+    "macro_f1": 0.5438510517628649,
+    "per_class_f1": {
+      "benign": 0.24001799572601507,
+      "xss": 0.8476841077997147
+    }
+  },
+  {
+    "held_out_source": "synthetic_multifield",
+    "n_rows": 598,
+    "classes": [
+      "cmdi",
+      "sqli",
+      "xss"
+    ],
+    "macro_f1": 0.47584020291693085,
+    "per_class_f1": {
+      "cmdi": 0.0,
+      "sqli": 0.5263157894736842,
+      "xss": 0.9012048192771084
+    }
+  },
+  {
+    "held_out_source": "synthetic_nav",
+    "n_rows": 5150,
+    "classes": [
+      "benign"
+    ],
+    "macro_f1": 0.002714756641458212,
+    "per_class_f1": {
+      "benign": 0.002714756641458212
+    }
+  },
+  {
+    "held_out_source": "xss_dataset",
+    "n_rows": 13570,
+    "classes": [
+      "benign",
+      "xss"
+    ],
+    "macro_f1": 0.40625155114196093,
+    "per_class_f1": {
+      "benign": 0.09765743839367204,
+      "xss": 0.7148456638902498
+    }
+  }
+]
