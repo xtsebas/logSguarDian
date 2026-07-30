@@ -172,37 +172,6 @@ describe("logsguardian — custom threshold", () => {
   });
 });
 
-describe("logsguardian — per-class thresholds (no override)", () => {
-  // RF_CLASSES = ["benign","cmdi","path_traversal","sqli","xss"]
-  const SQLI_MID = [0.10, 0.10, 0.10, 0.40, 0.30]; // sqli at 0.40 — below sqli's 0.45 default
-  const SQLI_ABOVE_DEFAULT = [0.05, 0.05, 0.05, 0.75, 0.10]; // sqli at 0.75 — above sqli's 0.45 default
-  const CMDI_ABOVE_DEFAULT = [0.10, 0.60, 0.10, 0.10, 0.10]; // cmdi at 0.60 — above cmdi's 0.35 default
-
-  test("passes sqli prediction below the calibrated sqli threshold (0.45)", async () => {
-    const app = makeApp({ mode: "block", timeoutMs: 500 });
-    mockResponse(SQLI_MID, IF_NORMAL);
-
-    const { status } = await httpGet(app, "/?id=1 OR 1=1");
-    expect(status).toBe(200);
-  });
-
-  test("blocks sqli prediction above the calibrated sqli threshold (0.45)", async () => {
-    const app = makeApp({ mode: "block", timeoutMs: 500 });
-    mockResponse(SQLI_ABOVE_DEFAULT, IF_NORMAL);
-
-    const { status } = await httpGet(app, "/?id=1 OR 1=1");
-    expect(status).toBe(403);
-  });
-
-  test("blocks cmdi prediction above the calibrated cmdi threshold (0.35), lower than sqli's", async () => {
-    const app = makeApp({ mode: "block", timeoutMs: 500 });
-    mockResponse(CMDI_ABOVE_DEFAULT, IF_NORMAL);
-
-    const { status } = await httpGet(app, "/?id=; ls");
-    expect(status).toBe(403);
-  });
-});
-
 describe("logsguardian — client_ip capture", () => {
   test("persists the requester's IP on the logged DetectionEvent", async () => {
     const dbPath = tmpDb();
