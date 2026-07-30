@@ -40,7 +40,6 @@ let _requestId = 0;
 
 export function logsguardian(options: MiddlewareOptions = {}): RequestHandler {
   const mode = options.mode ?? "block";
-  // options.threshold, if set, overrides every class threshold (simple global override).
   const userThreshold = options.threshold;
   const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
   const modelDir = options.modelDir ?? DEFAULT_MODEL_DIR;
@@ -110,7 +109,7 @@ export function logsguardian(options: MiddlewareOptions = {}): RequestHandler {
     const confidence = rfProbs[maxIdx];
     const is_attack = predicted_class !== "benign";
     const is_anomaly = ifScore < IF_THRESHOLD;
-    const threshold = userThreshold ?? RF_THRESHOLDS[predicted_class] ?? DEFAULT_THRESHOLD;
+    const threshold = userThreshold ?? RF_THRESHOLD;
 
     let verdict: Verdict;
     if (is_attack && confidence >= threshold) {
