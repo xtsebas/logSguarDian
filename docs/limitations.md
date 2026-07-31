@@ -422,3 +422,37 @@ any extractor change that shifts feature values. Not retrained yet —
 intentionally batched into a planned v9 cycle alongside other pending
 changes (MinHash near-duplicate dedup, real cmdi data) rather than
 retraining per isolated change.
+
+## 8. Finding: RF confidence depends partly on request context richness, not just payload content
+
+Command injection payloads delivered with minimal HTTP context (no
+User-Agent, no cookies, no referer — the realistic shape of a raw
+curl/script-based attack, as opposed to a browser-driven request) show
+measurably lower RF confidence than the same injection technique embedded
+in a richer, browser-like request.
+
+Verified at the model level (bypassing Docker/HTTP entirely): direct ONNX
+inference on distinct recon-command techniques (`whoami`, `id`, `uname -a`,
+`env`, `ls -la /`, `ping`) delivered as a bare form-field value scored
+consistently below `RF_THRESHOLD` (range: 0.233–0.336), while overtly
+malicious targets (`/etc/passwd`, `/etc/shadow`, reverse shell payloads) in
+the same minimal-context delivery reliably scored above threshold.
+
+Confirmed via the parallel investigation in the vulnerable-app repo: of 33
+distinct cmdi techniques tested live, 17 always blocked, 14 blocked
+inconsistently depending on whitespace/casing formatting, and only 2 (6%)
+never blocked in any variant — consistent with a confidence-margin effect
+rather than a hard detection gap.
+
+This is distinct from the previously-documented cmdi/sqli attribution
+confusion (§5.1 of `logSguarDian-vulnerable-project/docs/config2-results-v1.md`)
+— that finding was about correct blocking with wrong category labeling;
+this finding is about genuine confidence degradation for a specific
+sub-class of low-signal recon commands under thin request context.
+
+**Root cause hypothesis:** the RF model's feature set includes secondary
+context signals (`ua_length`, cookie presence, etc.) that correlate with
+"legitimate browser traffic" during training. A request stripped of that
+context loses a confidence contribution the model implicitly relies on,
+even when the injection signal itself (`semicolon_count`,
+`shell_command_count`) is present and correctly extracted.
