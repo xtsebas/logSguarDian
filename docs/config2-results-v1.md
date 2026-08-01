@@ -17,6 +17,8 @@ mode: 'block', threshold: 0.35, model: 'hybrid', timeoutMs: 50, dbPath: './logsg
 
 **Attack traffic:** the E2E fixture corpus (`e2e/fixtures/test_payloads.jsonl` — 500 payloads, 100/class, seed=42, the same corpus behind the F5.7 gate numbers in `docs/results.md`), replayed via Artillery with a custom `processor.js` (`beforeRequest` hook overriding method/url/headers/body per virtual user) rather than `curl`, to exercise the full corpus per category instead of the 6 hand-picked vectors from Config 1.
 
+**Note:** a separate, later Config 2 evaluation used an independently-built payload set (`attack-sim/payloads/cmdi.json`, bare shell-metacharacter strings with minimal HTTP context) in `logSguarDian-vulnerable-project`'s own Artillery harness — this is NOT the same corpus as this document's E2E-fixture-based run. See `logSguarDian-vulnerable-project/docs/config2-latency-evaluation.md` for that evaluation's methodology and results, including the context-sparsity finding (`docs/limitations.md` §8).
+
 ---
 
 ## 2. Attack 1 — SQL Injection (100 payloads, `e2e/fixtures/test_payloads.jsonl`, label=sqli)
