@@ -289,6 +289,160 @@ Hardware: node v25.6.0 on Apple Silicon
 
 ---
 
+## A24 — RF/IF worker-pool architecture (concurrency fix for Config 2's Δp95 regression)
+
+Triggered by the Config 2 Docker evaluation's Δp95=+265.8% finding
+(`logSguarDian-vulnerable-project/docs/config2-latency-evaluation.md`) —
+this section documents the root-cause investigation and fix, done entirely
+in this repo, bypassing Docker/HTTP to isolate the model/worker layer.
+
+### Root cause
+
+`onnxruntime-node`'s native addon serializes concurrent
+`InferenceSession.run()` calls **within a single thread** — confirmed
+thread-scoped, not per-session: pooling multiple `InferenceSession`
+instances of the same model inside one `worker_thread` does not help
+(growth stayed ~15ms regardless of pool size 1→8), but dispatching across
+**separate `worker_threads`** does — 2 threads roughly halved queueing
+growth under concurrent load (~8ms vs ~15ms for 20 concurrent calls, raw
+ONNX sessions, no middleware).
+
+IF (IsolationForest) is the affected model in practice: RF's own inference
+is negligible and flat under load (~0.03-0.13ms, confirmed via direct
+per-thread measurement), so only IF needed pooling.
+
+### Architecture change
+
+`packages/core/src/worker.ts` was rewritten from one worker running both
+RF+IF via `Promise.all`, to a **role-flag design**: `workerData.role: "rf"
+| "if"` selects which single model a worker loads. `packages/core/src/
+middleware.ts` now spawns **1 dedicated RF worker + a pool of 2 dedicated
+IF workers** (round-robin dispatched), instead of one worker handling both.
+
+**Memory constraint discovered mid-investigation:** the naive "N full
+workers, each with RF+IF" design does not fit the 300MB memory gate — a
+full worker (RF+IF combined) costs ~124.6MB, so even pool_size=2 would be
+~311MB. The shipped design (1 shared-cost RF + pooled IF only) fits because
+`onnxruntime-node`'s fixed native-runtime-init cost (~120-150MB) is paid
+once per process (shared library pages), and each *additional* worker
+thread loading only `if.onnx` costs far less (~20-30MB each).
+
+**Real measured memory** (`benchmarks/onnx-memory-pool.bench.js`, spawns
+the actual compiled `worker.js` via real `worker_threads`, matching
+production exactly): **245.11MB total process RSS**, gate ≤300MB, **margin
+54.89MB**. Close to the pre-implementation estimate (233.5MB) using
+isolated test scripts.
+
+### The cold-start bug the pool introduced, and the fix
+
+Initial implementation (RF worker + IF pool, no readiness signaling) had a
+**0% real-world success rate** for folding IF into the verdict — despite
+145/145 mocked unit tests passing. Root cause: `if.onnx`'s session takes
+~2-3 seconds to load (`ort.InferenceSession.create`), and with no gating,
+real requests arrive throughout that window; every message handler
+`await`s the same `sessionPromise`, then **all fire `session.run()`
+concurrently the instant it resolves** — retriggering the same
+concurrent-call serialization bug above, via a cold-start burst instead of
+live concurrent traffic. Confirmed by direct instrumentation
+(`queue_wait_ms` stayed flat/near-zero throughout — this was never a
+message-queueing problem — while raw `session.run()` duration climbed
+unbounded, 7.7ms→70.3ms over 150 sequential requests, never plateauing).
+RF's own dedicated worker, as a control, showed zero growth over the same
+150 requests (flat ~0.02-0.04ms) — ruling out "any isolated worker
+degrades over time" as an explanation.
+
+**Fix: readiness gate.** Each worker now posts `{ready: true, role}` once
+its session finishes loading; the middleware withholds dispatch to a
+worker until it has signaled ready (reusing the existing fail-open path —
+"not ready" is handled identically to "no worker available"). Verified via
+a control test: staggered/gated startup alone (no warmup) fixed IF's
+latency completely (stable ~0.8ms across 150 calls, zero growth) —
+warmup was not additionally needed.
+
+### The grace window (why resolve-on-RF-only alone doesn't work)
+
+RF is the sole blocking authority (decision-policy.md §3); IF is
+log-only/diagnostic. But IF is consistently *slower* than RF (~1-3.5ms vs
+~0.03-0.13ms) — a pure "resolve the instant RF replies" design means IF
+almost never gets folded into the verdict, silently breaking
+`pass_anomaly`/IF-driven detection (confirmed: 0/150 real captures with no
+grace window, despite 145/145 mocked tests passing with synthetic near-0ms
+mock timing — the mocks validated the logic, not whether it works against
+real inference timing).
+
+**Fix:** `IF_GRACE_MS = 5` (sized to IF's measured p95 of ~3.5ms + margin).
+Once RF replies, if IF hasn't answered yet, wait up to this short bounded
+window before finalizing without it. Not the same as the full per-hop
+fail-open `timeoutMs` — a separate, much shorter window for the common
+case (IF just slightly behind RF), not a failure timeout.
+
+**Real-world capture rate** (150 sequential requests, post-warmup, real
+ONNX inference, readiness gate active): **148/150 (98.7%)** resolved with
+IF folded into the verdict; 2/150 (1.3%) fell back to the accepted-loss
+path (grace window expired, IF's data discarded — logged verdict correct,
+`if_score=0`). Under 20-way concurrent burst, capture rate drops to 39/50
+(78%) — expected, since concurrency itself pushes some IF replies past the
+5ms window — but the fallback path resolves correctly every time, no
+errors, no added latency beyond the grace window itself.
+
+### Real measurements (real ONNX models, real `worker_threads`, real Express — not isolated test scripts)
+
+| Metric | Before pool (single worker) | Pool, no readiness gate | Pool + readiness gate (shipped) |
+|---|---|---|---|
+| Steady-state p50 | 1.135ms | 6.239ms (grace timer expiring every time) | **1.442ms** |
+| Steady-state p95 | 3.936ms | 6.382ms | **2.610ms** |
+| 20-concurrent growth (first→last) | not applicable (single worker serializes) | not measured (broken) | **6.15ms** (2.07ms→8.22ms) |
+| IF real-world capture rate | 100% (same worker, `Promise.all`) | 0% (0/150) | **98.7%** (148/150) |
+| Total process RSS | — | — | **245.11MB** (gate ≤300MB, margin 54.89MB) |
+
+The 20-concurrent growth (6.15ms) matches — and slightly beats — the
+isolated 2-raw-thread prediction from the diagnostic phase (~8.18ms),
+confirming the fix holds up with real message-passing, Express, and the
+readiness gate all in the loop, not just in a stripped-down ONNX-only test.
+
+**E2E detection suite** (`pnpm run test:e2e`, F5.7 gate): 8/8 passed,
+detection rates unchanged from historical baselines (sqli 100%, xss 99%,
+path_traversal 99%, cmdi 96%, benign FP 2%) — this architectural change is
+detection-invisible by design, confirmed.
+
+### Design decisions (locked, then refined)
+
+1. **Resolve-on-RF-only** was the original locked decision (preserve "IF
+   adds no latency"). Real measurement proved this alone doesn't work — IF
+   is systematically slower than RF, so it almost never wins the race.
+   Refined to **resolve-on-RF-only + bounded `IF_GRACE_MS` grace window** —
+   the grace window was the necessary correction to the original decision,
+   not a separate feature.
+2. **Accept IF data loss on late replies** — held from the original
+   decision, now with a measured residual rate (1.3% sequential, ~22%
+   under 20-way concurrent burst) instead of an assumption. No log-patch
+   mechanism added; late IF replies are logged as `if_score=0`,
+   `is_anomaly=false`.
+
+### Diagnostic instrumentation
+
+One env-gated debug flag remains in the shipped code (`worker.ts`,
+`middleware.ts`), intentionally kept as permanent diagnostic tooling
+rather than removed, documented in-line where declared:
+- `LOGSGUARDIAN_GRACE_DEBUG` — dispatch/grace-window path tracing (which
+  hop won the race, whether the grace window was hit or expired, worker
+  readiness events, IF worker errors) and per-call `session.run()` timing
+  with `queue_wait_ms` separated from `inference_ms` — this separation is
+  exactly what distinguished the cold-start burst bug from a queueing
+  problem, and is worth keeping available for any future regression.
+
+An earlier, separate `LOGSGUARDIAN_PERF_DEBUG` instrumentation set
+(per-phase IPC/extraction/inference timing) was written during an earlier
+stage of this investigation against the single-worker design, but was
+superseded by the role-flag worker.ts rewrite and never carried forward —
+it does not exist in the shipped code, only `LOGSGUARDIAN_GRACE_DEBUG`
+does.
+
+`LOGSGUARDIAN_GRACE_DEBUG` is a no-op (a single `if (process.env...)`
+check) when unset — no production cost.
+
+---
+
 ## F1.8 — Extractor Benchmark (CLOSED)
 
 Implementation: `benchmarks/extractor.bench.js`

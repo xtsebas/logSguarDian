@@ -44,10 +44,11 @@ export interface WorkerRequest {
   canonical: import("@logsguardian/extractor").CanonicalRequest;
 }
 
-/** Message sent from worker to middleware. */
-export interface WorkerResponse {
-  id: number;
-  rfProbs?: number[];
-  ifScore?: number;
-  error?: string;
-}
+/** Which model a worker in the pool is dedicated to. */
+export type WorkerRole = "rf" | "if";
+
+/** Message sent from worker to middleware. Always tagged with the sender's role. */
+export type WorkerResponse =
+  | { id: number; role: "rf"; rfProbs: number[] }
+  | { id: number; role: "if"; ifScore: number }
+  | { id: number; role: WorkerRole; error: string };
