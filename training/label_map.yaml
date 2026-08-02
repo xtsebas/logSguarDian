@@ -138,3 +138,9 @@ mappings:
   # Raw label field is already canonical ("cmdi").
   patt_cmdi_curated:
     cmdi: cmdi
+
+  # training/data_clean/synthetic_cmdi_minimal_context.jsonl
+  # Synthetic minimal-context (no UA/cookie/referer) cmdi examples,
+  # targeting recon-payload confidence gap. See parallel investigation.
+  synthetic_cmdi_minimal_context:
+    cmdi: cmdi
