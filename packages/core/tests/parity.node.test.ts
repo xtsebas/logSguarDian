@@ -95,6 +95,6 @@ describe("ONNX parity — Node vs Python (F4.3)", () => {
   });
 
   test("IF threshold is consistent with parity_report.threshold_if", () => {
-    expect(parityReport.threshold_if).toBeCloseTo(0.00333, 4);
+    expect(parityReport.threshold_if).toBeCloseTo(0.002486, 4);
   });
 });
