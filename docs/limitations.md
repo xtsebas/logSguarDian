@@ -456,3 +456,31 @@ context signals (`ua_length`, cookie presence, etc.) that correlate with
 context loses a confidence contribution the model implicitly relies on,
 even when the injection signal itself (`semicolon_count`,
 `shell_command_count`) is present and correctly extracted.
+
+## 9. IF (IsolationForest) verdict inclusion under concurrency — RESOLVED, residual rate quantified
+
+**Status: fixed at the architecture level** (`docs/results.md` §A24 has the
+full investigation). Root cause was two-layered: (1) `onnxruntime-node`
+serializes concurrent `InferenceSession.run()` calls within a single
+thread — fixed by splitting RF and IF into dedicated `worker_threads`
+(1 RF + a pool of 2 IF workers) instead of one worker running both; (2)
+this pool design initially had a 0% real-world success rate for folding
+IF into the verdict — a cold-start burst (real requests queuing behind
+IF's ~2-3s model-load `sessionPromise`, then bursting `session.run()`
+concurrently the instant it resolved) retriggered the same serialization
+bug via a different path. Fixed with a readiness handshake (workers
+signal `{ready: true}` after loading; the middleware withholds dispatch
+until ready) plus a short bounded `IF_GRACE_MS` (5ms) window so RF
+resolving first doesn't automatically starve IF's contribution.
+
+**Residual, accepted limitation:** IF is still occasionally excluded from
+the verdict — measured **1.3%** of requests under steady sequential load,
+rising to **~22%** under 20-way concurrent bursts (IF's own inference
+occasionally exceeds the 5ms grace window under contention). This is
+intentional, not a bug: RF remains the sole blocking authority
+(`decision-policy.md` §3) and the response never waits on IF beyond the
+bounded grace window, so a request under heavy concurrent load may log
+`if_score=0`/`is_anomaly=false` even when IF would have flagged it,
+purely from losing the race, not from misclassification. No log-patch
+mechanism exists for late IF replies — accepted data loss, consistent
+with IF being diagnostic/log-only rather than a blocking signal.
