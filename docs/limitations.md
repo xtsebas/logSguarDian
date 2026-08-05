@@ -484,3 +484,75 @@ bounded grace window, so a request under heavy concurrent load may log
 purely from losing the race, not from misclassification. No log-patch
 mechanism exists for late IF replies — accepted data loss, consistent
 with IF being diagnostic/log-only rather than a blocking signal.
+
+## 10. Finding: IF benign-calibration / attack-camouflage tension (User-Agent representation gap — investigated, not fixed)
+
+**Origin:** Config 2 live validation found IF's `pass_anomaly` rate on
+pure benign traffic (94.6%) is ~17x higher than its offline calibration
+target (5.3–5.7%).
+
+**Root cause (confirmed via ablation):** the benign training corpus is
+99.6% missing User-Agent headers (only `synthetic_nav`, 0.42% of benign
+rows, carries a realistic UA). Real production traffic is ~100%
+UA-present. IF learned "no UA = normal" — the opposite of reality.
+Confirmed by isolating UA presence as the sole driver via direct
+ablation: toggling UA alone flips the anomaly verdict on a realistic
+benign request (`GET /profile` with a real browser UA and session
+cookie); toggling cookie, referer, or query-string richness on the same
+request does not move the score at all. (Cookie/referer content isn't
+even measured by any of the extractor's 73 features — they only affect
+`unusual_headers_count` membership, not the anomaly score.)
+
+**Attempted fix:** generated synthetic UA-bearing benign traffic at
+increasing scale (2k → 21k records) and increasing structural realism
+(deeper multi-segment paths, realistic query strings for
+pagination/search). A dose-response sweep confirmed the flip threshold
+sits around 14–18% UA-present representation in benign training data
+(real production traffic is ~100%, so this is a large gap to close by
+volume alone).
+
+**Why the fix was not adopted:** every configuration that successfully
+flips the target benign case to non-anomalous also measurably regresses
+IF's recall on multiple attack classes — up to -11.7pp on `cmdi`, -6.3pp
+on `path_traversal`, -5.5pp on `sqli`, -2.5pp on `xss` at the best tested
+configuration. This is not a generator design flaw: it reproduced across
+two structurally different generation strategies (short/sparse paths,
+then deep/realistic paths with query strings), each trading one set of
+class regressions for another rather than eliminating the tradeoff —
+the second strategy improved `cmdi` slightly but introduced a new `sqli`
+regression that the first strategy didn't have, because realistic query
+strings for pagination/search sit structurally close to where `sqli`
+payloads live.
+
+**Root cause of the tension:** making synthetic benign traffic more
+realistic (UA-present, realistic path depth, realistic query strings)
+necessarily moves it structurally closer to what attacks against the
+same application look like, because effective attacks are deliberately
+crafted to blend into real traffic shapes. IF is an unsupervised
+structural-anomaly detector — it has no access to the semantic
+distinction between a benign `page=2` and a malicious `' OR 1=1` the way
+RF's supervised, labeled training does. Improving IF's benign-traffic
+realism inherently narrows its separation margin from realistic attacks
+on at least one structural axis; there is no generator design that
+resolves this while IF trains only on unlabeled benign structure.
+
+**Decision: not pursued into a v11 retrain.** IF has no blocking
+authority (`decision-policy.md` §3 — RF is the sole blocking gate, IF is
+log-enrichment only). The live `pass_anomaly` inflation is an
+operational log-noise cost (would flood a webhook/SIEM integration with
+false anomaly flags on ordinary traffic), not a security regression —
+RF's detection is completely unaffected by any part of this
+investigation. Accepting IF's current calibration (tuned to the
+offline/training benign distribution) was judged preferable to trading
+it for a confirmed recall cost on IF's own detection of 2-4 attack
+classes, in exchange for fixing secondary/diagnostic signal quality
+only.
+
+**Future work:** if IF's live-traffic calibration is revisited, consider
+either (a) a threshold recalibrated specifically against real
+UA-present traffic (rather than trying to make training data match it),
+accepting a shift in the offline FP/recall numbers as the honest cost of
+matching production reality, or (b) removing IF's dependency on
+features that carry this tension (UA-related features) entirely,
+forcing it to calibrate on axes that attacks and benign traffic
+genuinely don't share.
