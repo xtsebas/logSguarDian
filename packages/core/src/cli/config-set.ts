@@ -12,8 +12,15 @@ const VALIDATORS: Record<SupportedKey, (raw: string) => unknown> = {
     return n;
   },
   mode: (raw) => {
+    // 'log' is an input-only alias for 'monitor'
+    // mode (block|log), but 'monitor' is the term used everywhere else in
+    // the codebase (types.ts, decision-policy.md, config templates, tests).
+    // Accepting the alias here means the persisted config always says
+    // 'monitor', never 'log' — no second value circulates through the rest
+    // of the system.
+    if (raw === "log") return "monitor";
     if (raw !== "block" && raw !== "monitor") {
-      throw new Error(`mode must be 'block' or 'monitor', got '${raw}'`);
+      throw new Error(`mode must be 'block', 'monitor', or 'log', got '${raw}'`);
     }
     return raw;
   },

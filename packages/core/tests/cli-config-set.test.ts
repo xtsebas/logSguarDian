@@ -10,7 +10,7 @@
  *   6. Missing key or value exits with code 1.
  *   7. threshold=0 and threshold=1 are accepted (boundary).
  *   8. threshold outside [0,1] is rejected.
- *   9. mode='log' is rejected (valid values are block|monitor).
+ *   9. mode='log' is accepted as an input alias for 'monitor' (persisted as 'monitor').
  */
 import * as fs from "fs";
 import * as os from "os";
@@ -66,6 +66,15 @@ describe("config set — valid updates", () => {
       runConfigSet(["mode", "block"]);
       const config = loadConfig(dir);
       expect(config.mode).toBe("block");
+    });
+  });
+
+  test("sets mode to 'log' — persisted as 'monitor' (input-only alias)", () => {
+    withTempDir((dir) => {
+      runConfigInit();
+      runConfigSet(["mode", "log"]);
+      const config = loadConfig(dir);
+      expect(config.mode).toBe("monitor");
     });
   });
 
@@ -146,10 +155,14 @@ describe("config set — invalid input", () => {
     });
   });
 
-  test("exits 1 for mode='log' (not a valid mode value)", () => {
+  test("exits 1 for an unrecognized mode value, error lists block/monitor/log", () => {
     withTempDir(() => {
       runConfigInit();
-      expectExit1(() => runConfigSet(["mode", "log"]));
+      const errSpy = jest.spyOn(console, "error").mockImplementation(() => {});
+      expectExit1(() => runConfigSet(["mode", "foo"]));
+      const output = errSpy.mock.calls.map((c) => c.join(" ")).join("\n");
+      errSpy.mockRestore();
+      expect(output).toContain("'block', 'monitor', or 'log'");
     });
   });
 
