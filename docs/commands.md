@@ -71,11 +71,11 @@ logsguardian config set <key> <value>
 | Key | Type | Valid values | Default |
 |---|---|---|---|
 | `threshold` | float | `0` – `1` | `0.35` |
-| `mode` | string | `block`, `monitor` | `block` |
+| `mode` | string | `block`, `monitor` (`log` accepted as an input alias for `monitor`) | `block` |
 | `model` | string | `rf`, `if`, `hybrid` | `hybrid` |
 
 - `threshold` — RF confidence threshold. Requests with confidence ≥ threshold are treated as attacks.
-- `mode` — `block` sends HTTP 403 on detected attacks; `monitor` logs only, never blocks.
+- `mode` — `block` sends HTTP 403 on detected attacks; `monitor` logs only, never blocks. `log` is accepted as an alias when setting this key (`config set mode log`) but is always persisted to the config file as `monitor` — there is no third mode, `log` and `monitor` mean the same thing.
 - `model` — which model(s) to use: `rf` (Random Forest only), `if` (Isolation Forest only), `hybrid` (both).
 
 **Examples:**
@@ -83,6 +83,7 @@ logsguardian config set <key> <value>
 ```bash
 logsguardian config set threshold 0.85
 logsguardian config set mode monitor
+logsguardian config set mode log       # same as 'monitor' — the file is written with mode: 'monitor'
 logsguardian config set model rf
 ```
 
