@@ -18,7 +18,7 @@
   },
   "scripts": {
     "build": "tsc -p tsconfig.json",
-    "postbuild": "cp ../../training/models/class_metrics.json data/ && cp ../../training/models/feature_importance.json data/",
+    "postbuild": "cp ../../training/models/class_metrics.json data/ && cp ../../training/models/feature_importance.json data/ && cp ../../training/models/rf.onnx models/ && cp ../../training/models/if.onnx models/",
     "test": "jest"
   },
   "dependencies": {
