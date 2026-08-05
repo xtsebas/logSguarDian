@@ -53,3 +53,4 @@ training/models/*.pkl
 # packages/core bundles ONNX models from training/models/ at build/publish time;
 # avoid duplicating the binaries in git (training/models/ is the source of truth)
 packages/core/models/*.onnx
+*.tgz
