@@ -441,6 +441,49 @@ does.
 `LOGSGUARDIAN_GRACE_DEBUG` is a no-op (a single `if (process.env...)`
 check) when unset — no production cost.
 
+### Follow-up — the grace window replaced with an async log-patch
+
+The grace window above closed the 0%-capture bug, but it turned out to cost
+almost exactly as much latency as the original single-worker `Promise.all`
+design did — just for a different reason. Phase-by-phase re-instrumentation
+(direct measurement, not estimation) found:
+
+| Phase | mean | p50 | p95 |
+|---|---|---|---|
+| RF `session.run()` | 0.026ms | 0.020ms | 0.039ms |
+| RF queue_wait (extraction + queue) | 0.038ms | 0.022ms | 0.040ms |
+| **IF `session.run()`** | **0.978ms** | **0.891ms** | **1.213ms** |
+| IF queue_wait (extraction + queue) | 0.052ms | 0.027ms | 0.072ms |
+
+248/250 sampled requests followed the `if-caught-rf-during-grace` path — IF
+replied and cancelled the grace timer before it expired, not the other way
+around. So the grace window wasn't bounding a rare slow case; it was paying
+IF's real inference time (~0.9-1.2ms, not IPC, not extraction, not RF) on
+essentially every request, because that's what "IF replies before the timer
+expires" means in practice when IF is consistently the slower hop.
+
+Removed the wait entirely (`fix/if-async-log-patch-for-latency-gate`): RF
+resolves the response the instant it replies, full stop. IF's score — when
+it arrives — patches the already-logged `DetectionEvent` row in place
+(`EventStore.patchIfScore`), flipping `verdict` from `pass` to `pass_anomaly`
+retroactively (and firing the webhook then, if one is configured) rather
+than being discarded. `block` and `timeout` verdicts are never touched by a
+late patch — IF still has no blocking authority (decision-policy.md §3).
+
+| Metric | Bare Express | Grace window (previous) | Async log-patch (current) |
+|---|---|---|---|
+| p50 | 0.082ms | 1.08–1.37ms | **0.171ms** |
+| p95 | 0.119ms | 1.17–3.26ms | **0.300ms** |
+
+Tradeoff: a `pass_anomaly` verdict or its webhook may now be recorded a
+millisecond or so after the HTTP response went out, instead of before/during
+it — never a change IF couldn't already miss entirely under the old design
+(the old grace window's own accepted-loss path already discarded IF data on
+genuinely slow replies; this design just recovers most of what used to be
+discarded, asynchronously, instead of eliminating the wait for nothing). No
+change to detection rates — confirmed E2E-invisible (F5.7 gate, still 8/8,
+identical per-class rates to every prior measurement in this document).
+
 ---
 
 ## F1.8 — Extractor Benchmark (CLOSED)

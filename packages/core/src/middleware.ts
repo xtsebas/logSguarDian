@@ -1,15 +1,20 @@
 /**
- * Express middleware factory (F5.3, revised for pool architecture).
+ * Express middleware factory (F5.3, revised for pool architecture; async
+ * log-patch replacing the grace window per the F4.4-latency investigation).
  *
  * On first call, spawns a dedicated RF worker plus a small pool of IF
  * workers (round-robin dispatched), and opens the SQLite store. For
  * each request it:
  *   1. Extracts a CanonicalRequest from Express req
  *   2. Dispatches it to the RF worker AND to the next IF worker in rotation
- *   3. Resolves as soon as the RF hop answers (see below) — applies the
- *      decision policy (docs/decision-policy.md §3)
+ *   3. Resolves the INSTANT the RF hop answers — applies the decision
+ *      policy (docs/decision-policy.md §3). Never waits for IF.
  *   4. In 'block' mode: sends HTTP 403 if verdict is 'block'
  *   5. Logs the event asynchronously (after next/403)
+ *   6. If IF's reply arrives after the response already resolved (the
+ *      common case — IF is consistently slower than RF), the log row is
+ *      patched in place with IF's real score, and a 'pass' verdict flips
+ *      to 'pass_anomaly' retroactively if IF found an anomaly.
  *
  * Why two workers per request instead of one: onnxruntime-node's native
  * addon serializes concurrent InferenceSession.run() calls on the same
@@ -20,21 +25,22 @@
  * is pooled across multiple dedicated worker_threads.
  *
  * RF is the sole blocking authority (decision-policy.md §3); IF is
- * log-only/diagnostic. But IF is consistently slower than RF (measured
- * p50/p95 of ~1-3.5ms vs RF's ~0.03-0.13ms) — resolving the instant RF
- * replies would mean IF almost never gets folded into the verdict, silently
- * gutting pass_anomaly/IF-driven detection. So: once RF replies, if IF
- * hasn't answered yet, wait a short bounded IF_GRACE_MS window (sized to
- * IF's own measured p95 + margin) before finalizing — not the full
- * fail-open timeoutMs, just enough to catch the common case where IF is
- * merely a few ms behind. If IF still hasn't answered when the grace
- * window expires (or its worker fails), finalize without it — accepted
- * data loss on the genuinely-slow-IF case, rather than a log-patch
- * mechanism. This bounds, but does not eliminate, added latency: every
- * request where IF is slower than RF (the common case) pays up to
- * IF_GRACE_MS extra, which is intentional — it's approximately the same
- * wait the original single-worker Promise.all design always paid, not new
- * overhead introduced by the pool.
+ * log-only/diagnostic and never gates the response. An earlier design
+ * (see docs/results.md, "grace window") gave IF a short bounded window to
+ * catch up once RF replied, on the theory that IF is only a few ms behind
+ * and folding it in matters for pass_anomaly/webhook fidelity. Measurement
+ * (docs/results.md, latency investigation) found IF's own inference
+ * (~0.9-1.2ms p50/p95, not IPC or extraction) IS almost the entire added
+ * latency, because the grace window ends up genuinely waiting out IF's real
+ * inference in ~99% of requests (IF replies just before the window expires,
+ * not instead of it). Since IF never blocks anything, paying that wait on
+ * every request bought nothing but log fidelity. This version removes the
+ * wait entirely: RF resolves the response immediately; if IF's score
+ * arrives afterward, it patches the already-logged DetectionEvent row
+ * asynchronously (see `schedulePendingLogPatch` / `EventStore.patchIfScore`)
+ * instead of being discarded. Diagnostic fidelity is preserved (log ends up
+ * correct moments later for the vast majority of requests), latency is not
+ * paid at all.
  *
  * Fail-open guarantee: if the RF worker does not respond within timeoutMs,
  * or is not available, the request is always forwarded. A logsguardian
@@ -62,10 +68,6 @@ const RF_CLASSES: AttackClass[] = ["benign", "cmdi", "path_traversal", "sqli", "
 const DEFAULT_TIMEOUT_MS = 50;
 const DEFAULT_MODEL_DIR = path.join(__dirname, "..", "models");
 const IF_POOL_SIZE = 2;
-// Sized to IF's measured p95 (~3.5ms, steady-state single-request) + margin.
-// Not the same as ifTimer's full fail-open timeoutMs: this is a short window
-// for the common case (IF just slightly behind RF), not a failure timeout.
-const IF_GRACE_MS = 5;
 
 type CombinedResult = {
   verdict: Verdict;
@@ -73,7 +75,22 @@ type CombinedResult = {
   confidence: number;
   if_score: number;
   is_anomaly: boolean;
+  requestId: number;
+  /** True if IF hadn't answered yet when the response resolved — a late
+   *  reply for this request may still arrive and should be tracked for
+   *  a log patch. Always false for the no-RF-worker early-return path. */
+  ifPending: boolean;
 };
+
+/** A logged row awaiting a possible late IF patch (see schedulePendingLogPatch).
+ *  cleanupTimer is independent of the request's own PendingEntry/ifTimer — this
+ *  map entry is only created AFTER the entry has already been finalized and
+ *  removed from `pending`, so it needs its own timeoutMs-bounded lifetime. */
+interface PendingLogPatch {
+  rowId: number;
+  event: DetectionEvent;
+  cleanupTimer: ReturnType<typeof setTimeout>;
+}
 
 interface PendingEntry {
   resolved: boolean;
@@ -84,7 +101,6 @@ interface PendingEntry {
   ifDone: boolean;
   rfTimer: ReturnType<typeof setTimeout>;
   ifTimer: ReturnType<typeof setTimeout>;
-  graceTimer?: ReturnType<typeof setTimeout>;
   resolve: (r: CombinedResult) => void;
 }
 
@@ -105,6 +121,10 @@ export function logsguardian(options: MiddlewareOptions = {}): RequestHandler {
   }
 
   const pending = new Map<number, PendingEntry>();
+  // Requests logged with ifPending=true, awaiting a possible late IF reply
+  // to patch the row. Cleaned up either by a successful patch or by the
+  // per-request ifTimer once timeoutMs has elapsed with no reply.
+  const pendingLogPatches = new Map<number, PendingLogPatch>();
   let rfWorker: Worker | null = null;
   let rfReady = false;
   let ifWorkers: Worker[] = [];
@@ -114,7 +134,7 @@ export function logsguardian(options: MiddlewareOptions = {}): RequestHandler {
   let readyIfWorkers: Worker[] = [];
   let nextIfWorkerIndex = 0;
 
-  function applyPolicy(rfProbs: number[] | undefined, ifScore: number | undefined): CombinedResult {
+  function applyPolicy(rfProbs: number[] | undefined, ifScore: number | undefined): Omit<CombinedResult, "requestId" | "ifPending"> {
     if (!rfProbs) {
       return { verdict: "timeout", predicted_class: "benign", confidence: 0, if_score: 0, is_anomaly: false };
     }
@@ -139,14 +159,42 @@ export function logsguardian(options: MiddlewareOptions = {}): RequestHandler {
     return { verdict, predicted_class, confidence, if_score, is_anomaly };
   }
 
+  /** Attempts to patch a late IF reply into an already-logged row. No-op if the
+   *  row was never registered (store disabled, verdict was 'timeout', or a
+   *  patch/cleanup already consumed it). See module doc for the design. */
+  function schedulePendingLogPatch(requestId: number, ifScore: number): void {
+    const pending_ = pendingLogPatches.get(requestId);
+    if (!pending_) return;
+    clearTimeout(pending_.cleanupTimer);
+    pendingLogPatches.delete(requestId);
+
+    const is_anomaly = ifScore < IF_THRESHOLD;
+    const becomesAnomaly = is_anomaly && pending_.event.verdict === "pass";
+    const webhookFired = becomesAnomaly && !!webhookUrl;
+
+    if (webhookFired) {
+      sendWebhook(webhookUrl!, {
+        ...pending_.event,
+        if_score: ifScore,
+        is_anomaly: true,
+        verdict: "pass_anomaly",
+        webhook_sent: true,
+      });
+    }
+
+    try {
+      store?.patchIfScore(pending_.rowId, ifScore, is_anomaly, webhookFired);
+    } catch { /* non-fatal */ }
+  }
+
   function finalizeRequest(id: number, entry: PendingEntry): void {
     if (entry.resolved) return;
     entry.resolved = true;
     clearTimeout(entry.rfTimer);
     clearTimeout(entry.ifTimer);
-    clearTimeout(entry.graceTimer);
     pending.delete(id);
-    entry.resolve(applyPolicy(entry.rfProbs, entry.ifScore));
+    const base = applyPolicy(entry.rfProbs, entry.ifScore);
+    entry.resolve({ ...base, requestId: id, ifPending: !entry.ifDone });
   }
 
   function handleRfMessage(msg: WorkerResponse): void {
@@ -156,46 +204,33 @@ export function logsguardian(options: MiddlewareOptions = {}): RequestHandler {
     entry.rfProbs = "error" in msg || msg.role !== "rf" ? undefined : msg.rfProbs;
     entry.rfDone = true;
 
-    if (entry.ifDone || !entry.ifDispatched) {
-      // IF already answered, OR was never dispatched (no ready IF worker available) —
-      // nothing to wait for either way. Don't pay the grace window for a reply that can't come.
-      if (process.env.LOGSGUARDIAN_GRACE_DEBUG) console.error(JSON.stringify({ id: msg.id, path: entry.ifDone ? "if-beat-rf" : "no-if-dispatched-skip-grace" }));
-      finalizeRequest(msg.id, entry);
-    } else {
-      // Common case: RF wins the race (it's consistently faster than IF). Give IF a short,
-      // bounded window to catch up before finalizing without it — not the full fail-open
-      // timeoutMs, just enough to catch the normal case where IF is merely a few ms behind.
-      if (process.env.LOGSGUARDIAN_GRACE_DEBUG) console.error(JSON.stringify({ id: msg.id, path: "rf-first-waiting" }));
-      entry.graceTimer = setTimeout(() => {
-        if (process.env.LOGSGUARDIAN_GRACE_DEBUG) console.error(JSON.stringify({ id: msg.id, path: "grace-timer-fired", ifDone: entry.ifDone }));
-        finalizeRequest(msg.id, entry);
-      }, IF_GRACE_MS);
-    }
+    // No grace window: resolve the instant RF answers. IF never blocks the
+    // response (decision-policy.md §3) — if it hasn't answered yet, that's
+    // fine, applyPolicy just uses whatever ifScore is present (usually none;
+    // see module doc). A late IF reply patches the log asynchronously instead.
+    if (process.env.LOGSGUARDIAN_GRACE_DEBUG) console.error(JSON.stringify({ id: msg.id, path: "rf-resolved-immediately", ifDone: entry.ifDone }));
+    finalizeRequest(msg.id, entry);
   }
 
   function handleIfMessage(msg: WorkerResponse): void {
     const entry = pending.get(msg.id);
-    // No entry means RF already resolved (or timed out) this request — late IF
-    // reply, the accepted-loss case. Discard; do not resurrect a finished request.
+    const ifScore = !("error" in msg) && msg.role === "if" ? msg.ifScore : undefined;
+
+    // No entry means RF already resolved (or timed out) this request — the
+    // common case now, since RF no longer waits. Try a log patch instead of
+    // discarding.
     if (!entry || entry.resolved) {
-      if (process.env.LOGSGUARDIAN_GRACE_DEBUG) console.error(JSON.stringify({ id: msg.id, path: "if-message-DISCARDED-too-late" }));
+      if (process.env.LOGSGUARDIAN_GRACE_DEBUG) console.error(JSON.stringify({ id: msg.id, path: "if-late-patch-attempted" }));
+      if (ifScore !== undefined) schedulePendingLogPatch(msg.id, ifScore);
       return;
     }
-    if (!("error" in msg) && msg.role === "if") {
-      entry.ifScore = msg.ifScore;
-    }
+
+    // Rare: IF actually beat RF. Just record the score — RF's own handler
+    // (or its fail-open timer) drives finalization, unchanged from before.
+    entry.ifScore = ifScore;
     entry.ifDone = true;
     clearTimeout(entry.ifTimer);
-
-    if (entry.rfDone) {
-      // RF already arrived and is sitting in its grace window — no need to wait it out.
-      if (process.env.LOGSGUARDIAN_GRACE_DEBUG) console.error(JSON.stringify({ id: msg.id, path: "if-caught-rf-during-grace" }));
-      clearTimeout(entry.graceTimer);
-      finalizeRequest(msg.id, entry);
-    } else if (process.env.LOGSGUARDIAN_GRACE_DEBUG) {
-      console.error(JSON.stringify({ id: msg.id, path: "if-first-waiting-for-rf" }));
-    }
-    // Else RF hasn't arrived yet; ifScore is now stored and RF's own handler will pick it up.
+    if (process.env.LOGSGUARDIAN_GRACE_DEBUG) console.error(JSON.stringify({ id: msg.id, path: "if-beat-rf-waiting-for-rf" }));
   }
 
   try {
@@ -249,7 +284,7 @@ export function logsguardian(options: MiddlewareOptions = {}): RequestHandler {
       // caused the startup burst / concurrent-call growth this readiness gate exists
       // to prevent (see worker.ts and the module doc above).
       if (!rfWorker || !rfReady) {
-        resolve(applyPolicy(undefined, undefined));
+        resolve({ ...applyPolicy(undefined, undefined), requestId: id, ifPending: false });
         return;
       }
 
@@ -261,8 +296,12 @@ export function logsguardian(options: MiddlewareOptions = {}): RequestHandler {
         resolve,
         // RF never replying at all is the real fail-open timeout (RF is sole blocking authority).
         rfTimer: setTimeout(() => finalizeRequest(id, entry), timeoutMs),
-        // IF timeout is a no-op beyond bookkeeping: the response never waits on it directly
-        // (the short IF_GRACE_MS window above, started once RF replies, handles the common case).
+        // IF never blocks the response either way now — this timer is a no-op
+        // beyond bookkeeping (entry.ifDone / clearing it in handleIfMessage's
+        // "IF beat RF" branch). The separate pendingLogPatches.cleanupTimer (set
+        // up later, in the middleware function, only if IF hadn't answered by
+        // finalize time) is what actually bounds the late-patch map's lifetime —
+        // this one can't do that job because finalizeRequest clears it immediately.
         ifTimer: setTimeout(() => { /* intentionally no-op — see module doc */ }, timeoutMs),
       };
       pending.set(id, entry);
@@ -348,13 +387,25 @@ export function logsguardian(options: MiddlewareOptions = {}): RequestHandler {
 
     if (needsWebhook) sendWebhook(webhookUrl!, event);
 
+    // Track this row for a possible late IF patch — only when IF hadn't answered
+    // yet (ifPending) and the verdict came from a real RF reply. 'timeout' rows
+    // (RF itself failed) never get IF's score patched in, unchanged from before
+    // this design: IF has no standing to override a fail-open decision.
+    const trackForLatePatch = (rowId: number | undefined): void => {
+      if (rowId !== undefined && result.ifPending && result.verdict !== "timeout") {
+        const requestId = result.requestId;
+        const cleanupTimer = setTimeout(() => { pendingLogPatches.delete(requestId); }, timeoutMs);
+        pendingLogPatches.set(requestId, { rowId, event, cleanupTimer });
+      }
+    };
+
     if (mode === "block" && result.verdict === "block") {
-      try { store?.log(event); } catch { /* non-fatal */ }
+      try { trackForLatePatch(store?.log(event)); } catch { /* non-fatal */ }
       res.status(403).json({ error: "Forbidden", class: result.predicted_class });
       return;
     }
 
     next();
-    try { store?.log(event); } catch { /* non-fatal */ }
+    try { trackForLatePatch(store?.log(event)); } catch { /* non-fatal */ }
   };
 }

@@ -1,12 +1,14 @@
 /**
- * Unit tests for middleware.ts (A14/A18, A16/A23, revised for the RF/IF worker-pool split).
+ * Unit tests for middleware.ts (A14/A18, A16/A23, revised for the RF/IF worker-pool
+ * split, then again for the async log-patch replacing the grace window).
  *
  * worker_threads is mocked — no ONNX models required.
  * Each MockWorker instance remembers its own role (from workerData.role) so
  * the shared mock helpers can respond as the RF worker, the IF pool workers,
  * or both — mirroring the real architecture: middleware.ts spawns 1 RF
  * worker + IF_POOL_SIZE (2) IF workers, dispatches to both per request, and
- * resolves as soon as RF answers (IF only enriches, never blocks/delays).
+ * resolves the INSTANT RF answers — never waits for IF. A late IF reply
+ * patches the already-logged DetectionEvent row asynchronously instead.
  *
  * RF_CLASSES order: ["benign", "cmdi", "path_traversal", "sqli", "xss"]
  * IF_THRESHOLD = 0.002486040118540811  (below → anomaly)
@@ -126,8 +128,9 @@ function mockIfResponse(ifScore: number): void {
   }
 }
 
-/** Wires every IF pool mock worker to reply after delayMs — a REAL setTimeout, not setImmediate,
- *  to test IF_GRACE_MS's boundary (arrival within vs. past the grace window). */
+/** Wires every IF pool mock worker to reply after delayMs — a REAL setTimeout, not
+ *  setImmediate, to simulate IF genuinely arriving after the response already
+ *  resolved (the normal case now) and test the async log-patch path. */
 function mockIfResponseDelayed(ifScore: number, delayMs: number): void {
   for (const ifw of mockWorkersByRole.if) {
     ifw.postMessage = (msg: unknown) => {
@@ -251,19 +254,40 @@ describe("logsguardian — RF/IF pool partial-failure handling", () => {
     expect(row?.is_anomaly).toBe(0);
   });
 
-  test("IF within the grace window is included in the verdict (pass_anomaly)", async () => {
-    // IF replies via setImmediate (effectively ~0ms), well inside IF_GRACE_MS (5ms).
-    // This is the case that failed before the grace window existed (RF always won the
-    // race against IF's mock reply, resolving before ifScore was ever attached).
+  test("RF resolves immediately — response does not wait for IF at all", async () => {
+    // IF replies after 200ms, far slower than any real inference. If the response
+    // waited for it even briefly, elapsedMs would be close to 200ms.
+    const app = makeApp({ mode: "block", threshold: 0.70, timeoutMs: 500 });
+    mockRfResponse(BENIGN_HIGH);
+    mockIfResponseDelayed(IF_NORMAL, 200);
+
+    const { status, elapsedMs } = await httpGet(app, "/");
+    expect(status).toBe(200);
+    expect(elapsedMs).toBeLessThan(100);
+  });
+
+  test("IF's late reply patches the log asynchronously — verdict flips pass -> pass_anomaly", async () => {
     const dbPath = tmpDb();
     const app = makeApp({ mode: "block", threshold: 0.70, timeoutMs: 500, dbPath });
     mockRfResponse(BENIGN_HIGH);
-    mockIfResponse(IF_ANOMALY);
+    mockIfResponseDelayed(IF_ANOMALY, 20); // arrives well after the response is sent
 
     const { status } = await httpGet(app, "/");
     expect(status).toBe(200);
 
-    await new Promise((r) => setTimeout(r, 100)); // allow async store.log() to flush
+    // Immediately after the response: IF hasn't replied yet, so the row is logged
+    // as a plain pass with no anomaly data — this is the log-patch design's tradeoff.
+    await new Promise((r) => setTimeout(r, 5));
+    const dbEarly = new Database(dbPath, { readonly: true });
+    const earlyRow = dbEarly.prepare("SELECT verdict, if_score FROM detection_events WHERE id = 1").get() as
+      | { verdict: string; if_score: number }
+      | undefined;
+    dbEarly.close();
+    expect(earlyRow?.verdict).toBe("pass");
+    expect(earlyRow?.if_score).toBe(0);
+
+    // After IF's delayed reply (20ms) has had time to patch the row:
+    await new Promise((r) => setTimeout(r, 60));
     const db = new Database(dbPath, { readonly: true });
     const row = db.prepare("SELECT verdict, if_score, is_anomaly FROM detection_events WHERE id = 1").get() as
       | { verdict: string; if_score: number; is_anomaly: number }
@@ -271,30 +295,60 @@ describe("logsguardian — RF/IF pool partial-failure handling", () => {
     db.close();
 
     expect(row?.verdict).toBe("pass_anomaly");
+    expect(row?.if_score).toBe(IF_ANOMALY);
     expect(row?.is_anomaly).toBe(1);
   });
 
-  test("IF arriving AFTER the grace window expires is NOT included — verdict resolves as plain pass", async () => {
-    // IF_GRACE_MS is 5ms; delay the IF mock reply to 40ms, well past the window,
-    // to prove the window actually expires rather than waiting indefinitely for IF.
-    const dbPath = tmpDb();
-    const app = makeApp({ mode: "block", threshold: 0.70, timeoutMs: 500, dbPath });
+  test("IF's late reply with anomaly=true fires a webhook for the retroactive pass_anomaly", async () => {
+    let receivedBody: string | null = null;
+    const server = http.createServer((req, res) => {
+      let data = "";
+      req.on("data", (c) => (data += c));
+      req.on("end", () => { receivedBody = data; res.end(); });
+    });
+    await new Promise<void>((r) => server.listen(0, "127.0.0.1", r));
+    const { port } = server.address() as { port: number };
+
+    const app = makeApp({
+      mode: "block", threshold: 0.70, timeoutMs: 500,
+      webhookUrl: `http://127.0.0.1:${port}/hook`,
+    });
     mockRfResponse(BENIGN_HIGH);
-    mockIfResponseDelayed(IF_ANOMALY, 40);
+    mockIfResponseDelayed(IF_ANOMALY, 20);
+
+    const { status } = await httpGet(app, "/");
+    expect(status).toBe(200);
+    expect(receivedBody).toBeNull(); // no webhook yet — IF hasn't replied
+
+    await new Promise((r) => setTimeout(r, 80)); // let the delayed IF reply patch + fire
+    await new Promise<void>((r) => server.close(() => r()));
+
+    expect(receivedBody).not.toBeNull();
+    const body = JSON.parse(receivedBody!);
+    expect(body.verdict).toBe("pass_anomaly");
+    expect(body.is_anomaly).toBe(true);
+  });
+
+  test("IF never arrives — log keeps if_score=0, and a very late reply after the timer expires is NOT patched", async () => {
+    // timeoutMs (60) is also the ifTimer's cleanup budget for the late-patch map.
+    // Delay IF's reply well past that, so by the time it arrives, cleanup has
+    // already removed the tracked row — the patch attempt should be a no-op.
+    const dbPath = tmpDb();
+    const app = makeApp({ mode: "block", threshold: 0.70, timeoutMs: 60, dbPath });
+    mockRfResponse(BENIGN_HIGH);
+    mockIfResponseDelayed(IF_ANOMALY, 150);
 
     const { status, elapsedMs } = await httpGet(app, "/");
     expect(status).toBe(200);
-    // Resolved via the grace window (~5ms), not by waiting the full 40ms for IF.
-    expect(elapsedMs).toBeLessThan(40);
+    expect(elapsedMs).toBeLessThan(60);
 
-    await new Promise((r) => setTimeout(r, 100)); // allow async store.log() to flush
+    await new Promise((r) => setTimeout(r, 200)); // past both the 60ms cleanup and the 150ms IF reply
     const db = new Database(dbPath, { readonly: true });
     const row = db.prepare("SELECT verdict, if_score, is_anomaly FROM detection_events WHERE id = 1").get() as
       | { verdict: string; if_score: number; is_anomaly: number }
       | undefined;
     db.close();
 
-    // IF's anomalous score arrived too late to be folded in — verdict is plain pass, not pass_anomaly.
     expect(row?.verdict).toBe("pass");
     expect(row?.if_score).toBe(0);
     expect(row?.is_anomaly).toBe(0);
