@@ -9,7 +9,7 @@
  * resolves as soon as RF answers (IF only enriches, never blocks/delays).
  *
  * RF_CLASSES order: ["benign", "cmdi", "path_traversal", "sqli", "xss"]
- * IF_THRESHOLD = 0.00332745  (below → anomaly)
+ * IF_THRESHOLD = 0.002486040118540811  (below → anomaly)
  */
 import * as http from "http";
 import * as net from "net";
