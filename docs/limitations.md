@@ -457,7 +457,7 @@ context loses a confidence contribution the model implicitly relies on,
 even when the injection signal itself (`semicolon_count`,
 `shell_command_count`) is present and correctly extracted.
 
-## 9. IF (IsolationForest) verdict inclusion under concurrency — RESOLVED, residual rate quantified
+## 9. IF (IsolationForest) verdict inclusion under concurrency — RESOLVED (grace window superseded by async log-patch)
 
 **Status: fixed at the architecture level** (`docs/results.md` §A24 has the
 full investigation). Root cause was two-layered: (1) `onnxruntime-node`
@@ -473,17 +473,25 @@ signal `{ready: true}` after loading; the middleware withholds dispatch
 until ready) plus a short bounded `IF_GRACE_MS` (5ms) window so RF
 resolving first doesn't automatically starve IF's contribution.
 
-**Residual, accepted limitation:** IF is still occasionally excluded from
-the verdict — measured **1.3%** of requests under steady sequential load,
-rising to **~22%** under 20-way concurrent bursts (IF's own inference
-occasionally exceeds the 5ms grace window under contention). This is
-intentional, not a bug: RF remains the sole blocking authority
-(`decision-policy.md` §3) and the response never waits on IF beyond the
-bounded grace window, so a request under heavy concurrent load may log
-`if_score=0`/`is_anomaly=false` even when IF would have flagged it,
-purely from losing the race, not from misclassification. No log-patch
-mechanism exists for late IF replies — accepted data loss, consistent
-with IF being diagnostic/log-only rather than a blocking signal.
+**Superseded (see `docs/results.md`, "the grace window replaced with an
+async log-patch"):** the `IF_GRACE_MS` window described above measurably
+cost ~1ms of added latency on nearly every request — direct instrumentation
+found it wasn't bounding a rare slow-IF case, it was paying IF's real
+inference time (~0.9-1.2ms) on ~99% of requests, since IF almost always
+replied just before the window expired rather than after. The grace window
+was removed entirely: RF now resolves the response the instant it replies,
+with **no wait for IF at all**. IF's score, whenever it arrives, patches the
+already-logged `DetectionEvent` row in place (`EventStore.patchIfScore`),
+flipping a `pass` verdict to `pass_anomaly` retroactively (and firing the
+webhook then, if configured) instead of being discarded. `block` and
+`timeout` verdicts are never touched by a late patch. This closes the
+"data loss" framing above for the common case — a late IF reply is now
+recovered a millisecond or so after the response, not thrown away — at the
+cost of the same theoretical race under extreme concurrency (an in-flight
+patch may itself lose the race against the per-request cleanup timer if IF
+is slower than the full fail-open `timeoutMs`, not just slower than RF;
+this residual case has not been separately re-measured under 20-way
+concurrent burst since the redesign).
 
 ## 10. Finding: IF benign-calibration / attack-camouflage tension (User-Agent representation gap — investigated, not fixed)
 
