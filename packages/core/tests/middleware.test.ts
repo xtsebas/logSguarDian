@@ -500,4 +500,58 @@ describe("logsguardian — webhook", () => {
     expect(row?.verdict).toBe("block");
     expect(row?.webhook_sent).toBe(0);
   });
+
+  test("mutating the registry between two requests on the SAME running middleware instance takes effect immediately (no restart)", async () => {
+    const dbPath = tmpDb();
+    let received = "";
+    const server = http.createServer((req, res) => {
+      let data = "";
+      req.on("data", (c) => (data += c));
+      req.on("end", () => { received = data; res.writeHead(200); res.end(); });
+    });
+    await new Promise<void>((r) => server.listen(0, "127.0.0.1", r));
+    const { port } = server.address() as { port: number };
+    const url = `http://127.0.0.1:${port}/hook`;
+
+    // App is constructed with an empty webhooks table. This single instance
+    // (one middleware closure, one set of workers) is reused for all 3 requests
+    // below — no new makeApp() call happens after this point. That's the point:
+    // if webhookStore.list() were read once and cached at middleware-init time
+    // instead of queried fresh per request, requests 2 and 3 would still behave
+    // like request 1, since nothing about the app instance itself ever changes.
+    const app = makeApp({ mode: "block", threshold: 0.70, timeoutMs: 500, dbPath });
+    mockResponse(SQLI_HIGH, IF_NORMAL);
+
+    // Request 1: registry is empty — must not fire.
+    await httpGet(app, "/?id=1 OR 1=1");
+    await new Promise((r) => setTimeout(r, 200));
+    expect(received).toBe("");
+
+    // Mutate the registry via a SEPARATE WebhookStore handle to the same dbPath —
+    // the app instance above is never touched or reconstructed.
+    const store = new WebhookStore(dbPath);
+    const id = store.add(url);
+    store.close();
+
+    // Request 2: same app instance — must now fire, proving the addition was
+    // picked up live.
+    await httpGet(app, "/?id=1 OR 1=1");
+    await new Promise((r) => setTimeout(r, 200));
+    expect(received).not.toBe("");
+    expect(JSON.parse(received).verdict).toBe("block");
+
+    // Remove it again via a separate handle, still without touching the app instance.
+    received = "";
+    const store2 = new WebhookStore(dbPath);
+    store2.remove(id);
+    store2.close();
+
+    // Request 3: same app instance — must stop firing again, proving removal is
+    // also picked up live, not just addition.
+    await httpGet(app, "/?id=1 OR 1=1");
+    await new Promise((r) => setTimeout(r, 200));
+
+    await new Promise<void>((r) => server.close(() => r()));
+    expect(received).toBe("");
+  });
 });
