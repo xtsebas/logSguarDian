@@ -51,6 +51,7 @@ import * as path from "path";
 import type { Request, Response, NextFunction, RequestHandler } from "express";
 import { normalizeCanonicalRequest } from "@logsguardian/extractor";
 import { EventStore } from "./store";
+import { WebhookStore } from "./webhook-store";
 import { sendWebhook } from "./webhook";
 import type {
   AttackClass,
@@ -118,6 +119,17 @@ export function logsguardian(options: MiddlewareOptions = {}): RequestHandler {
     store = new EventStore(options.dbPath);
   } catch {
     // Store failures are non-fatal; events won't be persisted.
+  }
+
+  // Same physical DB file as `store` (a separate connection, separate table) — registered
+  // via `webhooks add`/`remove`/`list` (webhook-store.ts). Queried fresh per notifiable
+  // event below, not cached at startup, so `webhooks add` on a running server takes effect
+  // on the very next detection without a restart.
+  let webhookStore: WebhookStore | null = null;
+  try {
+    webhookStore = new WebhookStore(options.dbPath);
+  } catch {
+    // Non-fatal; falls back to just the static webhookUrl, if any.
   }
 
   const pending = new Map<number, PendingEntry>();
@@ -366,7 +378,11 @@ export function logsguardian(options: MiddlewareOptions = {}): RequestHandler {
 
     const result = await infer(canonical);
 
-    const needsWebhook = webhookUrl && (result.verdict === "block" || result.verdict === "pass_anomaly");
+    const isNotifiable = result.verdict === "block" || result.verdict === "pass_anomaly";
+    const registeredWebhooks = isNotifiable
+      ? (webhookStore?.list() ?? []).filter((w) => w.status === "active")
+      : [];
+    const needsWebhook = isNotifiable && (!!webhookUrl || registeredWebhooks.length > 0);
     const elapsedMs = Date.now() - t0;
 
     const event: DetectionEvent = {
@@ -385,7 +401,10 @@ export function logsguardian(options: MiddlewareOptions = {}): RequestHandler {
       elapsed_ms: elapsedMs,
     };
 
-    if (needsWebhook) sendWebhook(webhookUrl!, event);
+    if (needsWebhook) {
+      if (webhookUrl) sendWebhook(webhookUrl, event);
+      for (const w of registeredWebhooks) sendWebhook(w.url, event);
+    }
 
     // Track this row for a possible late IF patch — only when IF hadn't answered
     // yet (ifPending) and the verdict came from a real RF reply. 'timeout' rows

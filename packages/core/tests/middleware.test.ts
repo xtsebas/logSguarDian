@@ -22,6 +22,7 @@ import Database from "better-sqlite3";
 import express from "express";
 import type { Application } from "express";
 import type { WorkerRequest, WorkerResponse } from "../src/types";
+import { WebhookStore } from "../src/webhook-store";
 
 // ─── Worker mock ─────────────────────────────────────────────────────────────
 // Variable starts with "mock" so babel-jest allows it inside jest.mock factory.
@@ -461,5 +462,150 @@ describe("logsguardian — webhook", () => {
 
     await new Promise<void>((r) => server.close(() => r()));
     expect(fired).toBe(false);
+  });
+
+  test("fires webhook to a destination registered via WebhookStore (webhooks add), no webhookUrl configured", async () => {
+    const { server, url, waitForBody } = await startReceiver();
+    const dbPath = tmpDb();
+    const store = new WebhookStore(dbPath);
+    store.add(url);
+    store.close();
+
+    const app = makeApp({ mode: "block", threshold: 0.70, timeoutMs: 500, dbPath }); // no webhookUrl
+    mockResponse(SQLI_HIGH, IF_NORMAL);
+
+    await httpGet(app, "/?id=1 OR 1=1");
+    const body = JSON.parse(await waitForBody());
+    await new Promise<void>((r) => server.close(() => r()));
+
+    expect(body.verdict).toBe("block");
+    expect(body.webhook_sent).toBe(true);
+  });
+
+  test("does not notify a webhook removed from WebhookStore, even without restarting the process", async () => {
+    let fired = false;
+    const server = http.createServer((_req, res) => { fired = true; res.end(); });
+    await new Promise<void>((r) => server.listen(0, "127.0.0.1", r));
+    const { port } = server.address() as { port: number };
+    const url = `http://127.0.0.1:${port}/hook`;
+
+    const dbPath = tmpDb();
+    const store = new WebhookStore(dbPath);
+    const id = store.add(url);
+    store.remove(id);
+    store.close();
+
+    const app = makeApp({ mode: "block", threshold: 0.70, timeoutMs: 500, dbPath });
+    mockResponse(SQLI_HIGH, IF_NORMAL);
+
+    await httpGet(app, "/?id=1 OR 1=1");
+    await new Promise((r) => setTimeout(r, 300)); // allow webhook to fire if it would
+
+    await new Promise<void>((r) => server.close(() => r()));
+    expect(fired).toBe(false);
+  });
+
+  test("fires to both webhookUrl and a registered WebhookStore destination on the same detection", async () => {
+    const staticReceiver = await startReceiver();
+    const registeredReceiver = await startReceiver();
+    const dbPath = tmpDb();
+    const store = new WebhookStore(dbPath);
+    store.add(registeredReceiver.url);
+    store.close();
+
+    const app = makeApp({
+      mode: "block",
+      threshold: 0.70,
+      timeoutMs: 500,
+      dbPath,
+      webhookUrl: staticReceiver.url,
+    });
+    mockResponse(SQLI_HIGH, IF_NORMAL);
+
+    await httpGet(app, "/?id=1 OR 1=1");
+    const [staticBody, registeredBody] = await Promise.all([
+      staticReceiver.waitForBody(),
+      registeredReceiver.waitForBody(),
+    ]);
+    await Promise.all([
+      new Promise<void>((r) => staticReceiver.server.close(() => r())),
+      new Promise<void>((r) => registeredReceiver.server.close(() => r())),
+    ]);
+
+    expect(JSON.parse(staticBody).verdict).toBe("block");
+    expect(JSON.parse(registeredBody).verdict).toBe("block");
+  });
+
+  test("no webhookUrl and no registered webhooks: block verdict is still logged, nothing thrown, webhook_sent=false", async () => {
+    const dbPath = tmpDb();
+    const app = makeApp({ mode: "block", threshold: 0.70, timeoutMs: 500, dbPath }); // no webhookUrl, empty webhooks table
+    mockResponse(SQLI_HIGH, IF_NORMAL);
+
+    const { status } = await httpGet(app, "/?id=1 OR 1=1");
+    expect(status).toBe(403);
+
+    await new Promise((r) => setTimeout(r, 100)); // allow async store.log() to flush
+    const db = new Database(dbPath, { readonly: true });
+    const row = db.prepare("SELECT verdict, webhook_sent FROM detection_events WHERE id = 1").get() as
+      | { verdict: string; webhook_sent: number }
+      | undefined;
+    db.close();
+
+    expect(row?.verdict).toBe("block");
+    expect(row?.webhook_sent).toBe(0);
+  });
+
+  test("mutating the registry between two requests on the SAME running middleware instance takes effect immediately (no restart)", async () => {
+    const dbPath = tmpDb();
+    let received = "";
+    const server = http.createServer((req, res) => {
+      let data = "";
+      req.on("data", (c) => (data += c));
+      req.on("end", () => { received = data; res.writeHead(200); res.end(); });
+    });
+    await new Promise<void>((r) => server.listen(0, "127.0.0.1", r));
+    const { port } = server.address() as { port: number };
+    const url = `http://127.0.0.1:${port}/hook`;
+
+    // App is constructed with an empty webhooks table. This single instance
+    // (one middleware closure, one set of workers) is reused for all 3 requests
+    // below — no new makeApp() call happens after this point. That's the point:
+    // if webhookStore.list() were read once and cached at middleware-init time
+    // instead of queried fresh per request, requests 2 and 3 would still behave
+    // like request 1, since nothing about the app instance itself ever changes.
+    const app = makeApp({ mode: "block", threshold: 0.70, timeoutMs: 500, dbPath });
+    mockResponse(SQLI_HIGH, IF_NORMAL);
+
+    // Request 1: registry is empty — must not fire.
+    await httpGet(app, "/?id=1 OR 1=1");
+    await new Promise((r) => setTimeout(r, 200));
+    expect(received).toBe("");
+
+    // Mutate the registry via a SEPARATE WebhookStore handle to the same dbPath —
+    // the app instance above is never touched or reconstructed.
+    const store = new WebhookStore(dbPath);
+    const id = store.add(url);
+    store.close();
+
+    // Request 2: same app instance — must now fire, proving the addition was
+    // picked up live.
+    await httpGet(app, "/?id=1 OR 1=1");
+    await new Promise((r) => setTimeout(r, 200));
+    expect(received).not.toBe("");
+    expect(JSON.parse(received).verdict).toBe("block");
+
+    // Remove it again via a separate handle, still without touching the app instance.
+    received = "";
+    const store2 = new WebhookStore(dbPath);
+    store2.remove(id);
+    store2.close();
+
+    // Request 3: same app instance — must stop firing again, proving removal is
+    // also picked up live, not just addition.
+    await httpGet(app, "/?id=1 OR 1=1");
+    await new Promise((r) => setTimeout(r, 200));
+
+    await new Promise<void>((r) => server.close(() => r()));
+    expect(received).toBe("");
   });
 });
