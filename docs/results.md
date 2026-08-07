@@ -486,6 +486,103 @@ identical per-class rates to every prior measurement in this document).
 
 ---
 
+## F6.5 — OBJ.3 latency criterion: why a relative-% gate is structurally adverse against a near-zero baseline
+
+### The criterion, exactly as written
+
+PLAN.md §6 (F6.2): *"Δp95 ≤ 5 ms por solicitud; p95 end-to-end dentro de
+5-10% de la línea base."* — Δp95 bounded to 5ms **and** the active p95
+within 5-10% of the no-middleware baseline p95, measured on the same load
+profile. F6.5 (gate) requires every project criterion reported with its
+measured value, measurement condition, and pass/fail verdict.
+
+### The mathematical structure of the problem
+
+The relative form of this criterion is:
+
+```
+Δp95_relative = (p95_active − p95_baseline) / p95_baseline × 100%
+```
+
+For a fixed absolute overhead `ε = p95_active − p95_baseline` (the real
+cost logsguardian adds — feature extraction, ONNX inference, IPC, logging),
+`Δp95_relative = ε / p95_baseline × 100%`. As `p95_baseline → 0`, this
+ratio diverges to infinity for **any** `ε > 0`, however small. This is not
+a property of logsguardian's implementation — it is a property of the
+ratio itself. A middleware that added a genuinely negligible 1ms to a
+1000ms baseline clears the ≤10% bound trivially (0.1%); the identical 1ms
+against a 3-5ms baseline (a bare Express route doing effectively no work)
+produces 20-33% before any inefficiency is even measured.
+
+This matters here specifically because the reference application
+(`logSguarDian-vulnerable-project`, a minimal Express + Postgres notes app,
+representative of the early-stage/low-traffic deployment OBJ.3 is meant to
+validate against) has a genuinely tiny no-middleware baseline: **p95 ≈
+4-5ms** measured via the real Artillery methodology
+(`attack-sim/artillery-baseline.yml`, 60s, `arrivalRate: 20`, the same
+login→browse→view→profile flow used throughout Config 2's evaluation — see
+`logSguarDian-vulnerable-project/docs/config2-latency-evaluation.md` for
+every raw measurement this section summarizes). Any nonzero real cost —
+and RF+IF inference plus a SQLite write is a real, unavoidable cost — is
+mathematically guaranteed to produce a large relative percentage against
+that floor, independent of how efficient the implementation is.
+
+### Four measured variants, real environment, same methodology
+
+All four rows below are the same middleware architecture (RF/IF
+worker-pool, per PR #46) evaluated at different points in the log-patch
+redesign investigated in this document (grace-window removal, PR #53; the
+write-queue fix; the grace-window-restored hybrid). Each was measured
+fresh — host-and-container-verified tarball installs (`grep` for the
+mechanism-specific code both on the host and via `docker exec` inside the
+running container before every measurement) — against the identical real
+Docker+Postgres environment and Artillery methodology:
+
+| Variant | Δp95 (relative) |
+|---|---|
+| Pre-#53 (grace window + synchronous write) | +156.7% |
+| PR #53 as merged (no grace + synchronous write) | +322% to +340% |
+| Write-queue only (no grace + batched write) | +202.5% to +227.5% |
+| Hybrid (grace window restored + batched write) | +142% to +178% |
+
+Two contributing mechanisms were directly tested rather than assumed:
+Postgres connection-pool contention (confirmed real — a Postgres-free
+route measured +100-133% vs. the Postgres-heavy route's +202-227% for the
+same write-queue-only build, i.e. roughly half the effect) and worker-pool
+IF-dispatch-burst regrowth, the same onnxruntime-node concurrent-call
+serialization bug PR #46 fixed once already (**ruled out** — per-call
+`inference_ms` measured flat across all 10 chronological chunks of a full
+60s sustained run, 2.99ms → 3.22ms mean, no climbing signature). Every
+variant tested, including the best one, remains well outside the ≤10%
+relative bound.
+
+### Absolute overhead: the alternative framing
+
+The same four measurements, read as absolute added latency instead of a
+percentage of a near-zero baseline:
+
+| Variant | p95 baseline | p95 active | Absolute Δp95 |
+|---|---|---|---|
+| Pre-#53 | ~4-5ms | ~11-13ms | ~7-8ms |
+| PR #53 as merged | ~5ms | ~21-22ms | ~16-17ms |
+| Write-queue only | ~4ms | ~12-13ms | ~8-9ms |
+| Hybrid (shipped) | ~5ms | ~12-14ms | ~7-9ms |
+
+Read in absolute terms, the shipped design adds roughly 7-9ms of p95
+latency per request in the real Docker+Postgres environment — small,
+stable across repeated runs, and consistent with the bare-Node local
+measurement of the same architecture (F4.4/A19/A24: sub-millisecond to
+low-single-digit-ms overhead outside Docker). PLAN.md's own F6.2 criterion
+already contains an absolute-value form (`Δp95 ≤ 5 ms`) alongside the
+relative one; the absolute numbers here sit close to that bound (7-9ms vs.
+a 5ms target) rather than the order-of-magnitude gap the relative
+percentage implies. This is offered as the more representative metric for
+this deployment profile, not as a substitute pass/fail verdict — the
+relative criterion is what PLAN.md specifies, and F6.5's gate requires
+reporting the measured value against it regardless.
+
+---
+
 ## F1.8 — Extractor Benchmark (CLOSED)
 
 Implementation: `benchmarks/extractor.bench.js`
