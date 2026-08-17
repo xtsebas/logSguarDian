@@ -6,7 +6,7 @@ export type ModelSelection = "rf" | "if" | "hybrid";
 export interface MiddlewareOptions {
   /** 'block' sends HTTP 403 on detected attacks. 'monitor' logs only. Default: 'block'. */
   mode?: Mode;
-  /** Optional RF confidence threshold (0–1) overriding the calibrated per-class defaults for ALL classes. Default: unset (per-class thresholds apply). */
+  /** RF confidence (0-1) above which an attack-classified request is blocked. Lower = more attacks caught, more false positives. Higher = fewer false positives, more missed attacks. Default: 0.35 (calibrated — see docs/decision-policy.md). */
   threshold?: number;
   /** Which model(s) to use for inference. Default: 'hybrid' (RF + IF). */
   model?: ModelSelection;
