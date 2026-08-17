@@ -83,7 +83,8 @@ switch (command) {
       console.error(`logsguardian: failed to send test webhook — ${(err as Error).message}`);
       process.exit(1);
     });
-    
+    break;
+
   case "webhooks list":
     runWebhooksList(commandArgs);
     break;
