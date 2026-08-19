@@ -1,12 +1,9 @@
-import { requireConfig } from "./guard";
+import { requireConfig, parseFormat } from "./guard";
 
 export function runConfigShow(args: string[]): void {
   const config = requireConfig();
 
-  const format = (() => {
-    const idx = args.indexOf("--format");
-    return idx !== -1 ? args[idx + 1] : "table";
-  })();
+  const format = parseFormat(args, ["table", "json"] as const, "table");
 
   if (format === "json") {
     console.log(JSON.stringify(config, null, 2));

@@ -52,6 +52,7 @@ export function runConfigSet(args: string[]): void {
   const [key, rawValue] = args;
 
   if (!key || rawValue === undefined) {
+    console.error("logsguardian: config set requires a key and a value");
     console.error("Usage: logsguardian config set <key> <value>");
     console.error(`Supported keys: ${SUPPORTED_KEYS.join(", ")}`);
     process.exit(1);

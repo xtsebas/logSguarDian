@@ -1,7 +1,7 @@
 import * as fs from "fs";
 import * as path from "path";
 import Database from "better-sqlite3";
-import { requireConfig } from "./guard";
+import { requireConfig, parseFormat } from "./guard";
 import type { MiddlewareOptions } from "../types";
 
 interface AttackTypeRow {
@@ -20,10 +20,7 @@ interface AttackTypeRow {
 export function runAttacksList(args: string[]): void {
   const config = requireConfig() as unknown as MiddlewareOptions;
 
-  const format = (() => {
-    const idx = args.indexOf("--format");
-    return idx !== -1 ? args[idx + 1] : "table";
-  })();
+  const format = parseFormat(args, ["table", "json"] as const, "table");
 
   const dbPath = path.resolve(process.cwd(), config.dbPath ?? "logsguardian.db");
 

@@ -8,6 +8,7 @@ export function runWebhooksAdd(args: string[]): void {
 
   const url = args[0];
   if (!url) {
+    console.error("logsguardian: webhooks add requires a url argument");
     console.error("Usage: logsguardian webhooks add <url>");
     process.exit(1);
   }

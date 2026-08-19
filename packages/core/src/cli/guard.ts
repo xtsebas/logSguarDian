@@ -30,3 +30,21 @@ export function requireConfig(): MiddlewareOptions {
     process.exit(1);
   }
 }
+
+/**
+ * Parses `--format <value>` from CLI args, validating it against the given
+ * allowed values. Exits with a clear error on an unrecognized value instead
+ * of silently falling back to the default — a typo (`--format jsno`) must
+ * not produce silently-wrong output with no indication anything was
+ * misspelled.
+ */
+export function parseFormat<T extends string>(args: string[], valid: readonly T[], defaultFormat: T): T {
+  const idx = args.indexOf("--format");
+  if (idx === -1) return defaultFormat;
+  const raw = args[idx + 1];
+  if (!(valid as readonly string[]).includes(raw)) {
+    console.error(`logsguardian: --format must be ${valid.map((v) => `'${v}'`).join(" or ")}, got '${raw}'`);
+    process.exit(1);
+  }
+  return raw as T;
+}
