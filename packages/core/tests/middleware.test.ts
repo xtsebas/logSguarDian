@@ -52,6 +52,7 @@ jest.mock("worker_threads", () => {
     }
     postMessage(_msg: unknown): void { /* no-op → hop times out */ }
     terminate(): void {}
+    unref(): void {} // real Worker has this (middleware.ts calls it); EventEmitter doesn't
   }
   return {
     Worker: MockWorker,

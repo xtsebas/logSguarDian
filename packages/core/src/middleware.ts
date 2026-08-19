@@ -261,6 +261,16 @@ export function logsguardian(options: MiddlewareOptions = {}): RequestHandler {
       rfWorker = null;
       rfReady = false;
     });
+    // Don't let this worker alone keep the process alive. It's still fully usable —
+    // unref() only affects exit semantics, not message delivery — but without it, a
+    // host app doing graceful shutdown (close the server, let Node exit naturally,
+    // no explicit process.exit()) hangs forever on this handle. The HTTP server
+    // itself already keeps the process alive while actually serving traffic.
+    // MUST come after .on("message", ...) is attached — Node re-refs a Worker's
+    // internal MessagePort as soon as a "message" listener is registered, silently
+    // undoing an unref() called beforehand (confirmed empirically, not documented
+    // clearly anywhere — a Worker.unref() before attaching listeners is a no-op).
+    rfWorker.unref();
 
     ifWorkers = Array.from({ length: IF_POOL_SIZE }, () => {
       const w = new Worker(workerPath, { workerData: { role: "if", modelDir } });
@@ -275,6 +285,7 @@ export function logsguardian(options: MiddlewareOptions = {}): RequestHandler {
         ifWorkers = ifWorkers.filter((x) => x !== w);
         readyIfWorkers = readyIfWorkers.filter((x) => x !== w);
       });
+      w.unref(); // see the rfWorker.unref() comment above — same ordering requirement applies here
       return w;
     });
     if (process.env.LOGSGUARDIAN_GRACE_DEBUG) console.error("ifWorkers spawned:", ifWorkers.length);
