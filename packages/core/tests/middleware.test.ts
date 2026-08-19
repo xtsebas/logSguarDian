@@ -52,6 +52,7 @@ jest.mock("worker_threads", () => {
     }
     postMessage(_msg: unknown): void { /* no-op → hop times out */ }
     terminate(): void {}
+    unref(): void {} // real Worker has this (middleware.ts calls it); EventEmitter doesn't
   }
   return {
     Worker: MockWorker,
@@ -271,14 +272,19 @@ describe("logsguardian — RF/IF pool partial-failure handling", () => {
     const dbPath = tmpDb();
     const app = makeApp({ mode: "block", threshold: 0.70, timeoutMs: 500, dbPath });
     mockRfResponse(BENIGN_HIGH);
-    mockIfResponseDelayed(IF_ANOMALY, 20); // arrives well after the response is sent
+    // 100ms (not 20ms): the "early" checkpoint below needs real margin past httpGet's
+    // own round-trip (server + HTTP + SQLite write) before IF's timer fires, or this
+    // becomes a real-clock race that fails under any environment slower than the
+    // machine it was written on — was previously observed to fail deterministically
+    // (not flaky) on a loaded/Windows dev environment with only a 5ms/20ms margin.
+    mockIfResponseDelayed(IF_ANOMALY, 100); // arrives well after the response is sent
 
     const { status } = await httpGet(app, "/");
     expect(status).toBe(200);
 
     // Immediately after the response: IF hasn't replied yet, so the row is logged
     // as a plain pass with no anomaly data — this is the log-patch design's tradeoff.
-    await new Promise((r) => setTimeout(r, 5));
+    await new Promise((r) => setTimeout(r, 30));
     const dbEarly = new Database(dbPath, { readonly: true });
     const earlyRow = dbEarly.prepare("SELECT verdict, if_score FROM detection_events WHERE id = 1").get() as
       | { verdict: string; if_score: number }
@@ -287,8 +293,8 @@ describe("logsguardian — RF/IF pool partial-failure handling", () => {
     expect(earlyRow?.verdict).toBe("pass");
     expect(earlyRow?.if_score).toBe(0);
 
-    // After IF's delayed reply (20ms) has had time to patch the row:
-    await new Promise((r) => setTimeout(r, 60));
+    // After IF's delayed reply (100ms) has had time to patch the row:
+    await new Promise((r) => setTimeout(r, 150));
     const db = new Database(dbPath, { readonly: true });
     const row = db.prepare("SELECT verdict, if_score, is_anomaly FROM detection_events WHERE id = 1").get() as
       | { verdict: string; if_score: number; is_anomaly: number }

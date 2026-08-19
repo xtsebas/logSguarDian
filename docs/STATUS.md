@@ -1,147 +1,47 @@
 # logSguarDian — Repository Status Report
-**Date:** 2026-06-14 (updated from 2026-06-11 original)  
-**Auditor:** Library engineer  
-**Branch:** main  
+
+**Date:** 2026-08-16
+**Supersedes:** the pre-`packages/core` version of this document (2026-06-14) — that snapshot described an empty `packages/core` skeleton and `rf_v1`/`if_v1`. Everything below reflects the current implementation.
 
 ---
 
 ## Section 1 — What exists and works
 
-| Artifact | Phase | Verified |
-|----------|-------|---------|
-| `packages/extractor/src/` — 72-feature TS extractor (7 source files) | F1.2–1.5 | 21/21 tests pass |
-| `packages/extractor/src/cli.ts` — batch CLI `extractor <in.jsonl> <out.csv>` | F1.7 | Built, tested |
-| `packages/extractor/dist/` — compiled JS (gitignored, rebuild with `npm run build`) | F1.7 | Clean build |
-| `training/parsers/parse_*.py` — 7 parsers, flat CanonicalRequest output | F2.2 | All regenerated |
-| `training/data_clean/*.jsonl` — 7 source JSONL files (~974K total raw records) | F2.2 | Present |
-| `training/unify.py` — dedup (exact + near-dup), produces `unified.jsonl` | F2.4 | 399,642 rows after dedup |
-| `training/split.py` — stratified 70/15/15 split by class+source | F2.6 | All 3 checks pass |
-| `training/splits/test.lock.sha256` | F2.7 GATE | Committed before training |
-| `training/models/rf_v1.pkl` — Random Forest (100 trees, max_depth=40) | F3.2 | Trained, macro F1=0.975 on val |
-| `training/models/if_v1.pkl` — Isolation Forest (200 trees, benign-only) | F3.5 | recall=0.665, FP=0.099 on val |
-| `training/models/rf.onnx` — RF exported, opset 17 | F4.1 | max_prob_diff=1.6e-7 |
-| `training/models/if.onnx` — IF exported, opset 17/ml=3 | F4.1 | max_score_diff=1.9e-7 |
-| `training/models/parity_report.json` — parity_passed=true, n_features=66 | F4.4 GATE | **CLEARED** |
-| `training/results/baseline_results.csv`, `rf_confusion_matrix.png`, `if_recall_fp_curve.png` | F3 | Present |
-| `training/notebooks/02–05_*.ipynb` — all 4 executed cleanly | F3–F4 | All gates pass |
-| `training/FEATURE_NOTES.md` — documents the 6 excluded features and 66-dim contract | — | Present |
+| Artifact | Verified |
+|----------|---------|
+| `packages/extractor/src/` — 73-feature TS extractor (73rd feature, `non_form_operator_count`, added post-launch to fix a form-syntax false positive) | 68/68 tests pass, including numeric parity against the Python reference |
+| `packages/extractor/src/cli.ts` — batch CLI, JSONL → CSV | Built, tested |
+| `packages/core/src/middleware.ts` — Express middleware, RF-dedicated + IF-pool worker architecture, async log-patch (no grace-window latency cost) | 147/147 core tests pass |
+| `packages/core/src/worker.ts` — ONNX inference (RF: 67 features, IF: 61) | Parity verified against `parity_report.json` |
+| `packages/core/src/store.ts` + `webhook-store.ts` + `webhook.ts` — SQLite event log, webhook registry (live, no restart needed), fire-and-forget delivery | Tested, verified live against real Config 2 traffic |
+| `packages/core/src/cli.ts` + `cli/` — 4 command groups (`config`, `attacks`, `endpoints`, `webhooks`), 14 subcommands | 113/113 CLI tests pass |
+| `training/models/{rf,if}.onnx` — currently rf_v10 / if_v9, worker-pool architecture | Coverage: sqli 100%, xss 100%, path_traversal 93%, cmdi 100% (all ≥80% gate); parity <0.1% |
+| Config 1/2/3 evaluations against `logSguarDian-vulnerable-project` | Config 1 (baseline) and Config 2 (+logsguardian) closed and documented; Config 3 (+WAF) in progress, see Section 3 |
+| npm publish readiness audit (READMEs, `docs/api.md`, `docs/decision-policy.md`, `docs/architecture.md`, `package.json` metadata, real `pnpm pack` + solo-install verification) | Complete — see `.claude/decisiones.md` "Auditoría de docs pre-publish npm" and follow-up entries |
 
 ---
 
-## Section 2 — What exists but needs work
+## Section 2 — Known gaps and accepted limitations (not blocking, but real)
 
-### LOW: `packages/extractor` node_modules not installed in fresh clone
-Run `npm install` in `packages/extractor/` before building. The root workspace has no shared dependency installation script yet.
-
-### LOW: Split parquets are gitignored and must be regenerated
-`training/splits/train|val|test.parquet` are excluded by `.gitignore`. After a fresh clone, regenerate by running:
-```
-python3 training/unify.py
-node packages/extractor/dist/cli.js training/data_clean/unified.jsonl training/data_clean/features.csv
-python3 -c "import pandas as pd; df=pd.read_csv(...) ... df.to_parquet(...)"   # see pipeline docs
-python3 training/split.py
-```
-(A `Makefile` or `pipeline.sh` for this is missing — not yet implemented.)
+| Item | Status | Note |
+|------|--------|------|
+| **Δp95 latency criterion (OE3, `.claude/CLAUDE.md`)** | **Unresolved as literally worded** | The relative-% gate (≤5-10%) is structurally very hard to pass against this project's near-zero-latency reference app baseline — absolute overhead is small (single-digit ms) but the ratio still fails. Needs an explicit decision (reinterpret as absolute ms, or re-measure against a more realistic baseline) before reporting this objective as met. See `docs/results.md` §F6.5. |
+| **IF `pass_anomaly` rate on benign traffic** | Accepted limitation, not a bug | Root-caused to a User-Agent representation gap in IF's training data (see `docs/limitations.md`). Does not affect blocking — RF holds sole blocking authority. |
+| **`middleware.test.ts` timing flakiness under full-suite parallel load** | Documented, not fixed | Several tests depend on real `setTimeout` margins; under 18-suite parallel CPU contention, different tests intermittently exceed their margin (each individually passes in isolation). One deterministic case (too-tight 5ms margin) was fixed; the broader pattern (real timers vs. fake timers) was not — same treatment as `smoke.test.ts`'s existing CI exclusion. |
+| **`docs/architecture.md` §2 (ML/training side)** | Stale numbers, not verified this cycle | Still cites "72 features"/"1,155,302 rows" for the raw dataset-construction pipeline — no confirmed current number to replace it with; flagged in the doc itself rather than silently left wrong. |
+| **cmdi/sqli class-attribution confusion** | Documented, not fixed | ~49% of cmdi payloads get labeled `sqli` in reporting (still correctly blocked) — affects triage accuracy in `attacks`/`endpoints` output, not detection. See `docs/limitations.md` §1. |
 
 ---
 
-## Section 3 — What does not exist yet
+## Section 3 — In progress, outside this repo
 
-| Artifact | Phase | Blocked by |
-|----------|-------|-----------|
-| `packages/core/` — middleware, worker_thread, SQLite store | F5 | Nothing — parity CLEARED |
-| `docs/api.md` — public middleware API design | F5.1 | Unblocked |
-| `docs/decision-policy.md` — hybrid RF+IF decision logic | F3.7 | Unblocked (F3 done) |
-| `.github/workflows/ci.yml` — CI pipeline | F0.4 | Unblocked |
-| `benchmarks/` — extractor and load benchmarks | F1.8, F6 | F1.8 unblocked; F6 blocked on F5 |
-| `datasets/splits/test.lock.sha256` | F2.7 | Done (in `training/splits/`) |
-| E2E detection test suite | F5.7 GATE | F5 complete |
-| Artillery load benchmarks | F6 | F5 complete |
-| npm package publishing workflow | F7.4 | F6 GATE |
+- **Config 3 (WAF defense-in-depth)** — `logSguarDian-vulnerable-project` repo, branches `feat/waf-modsecurity-crs` (Config 3a, WAF-only baseline) and `feat/config3-waf-plus-logsguardian` (Config 3b, layered stack). ModSecurity v3 + OWASP CRS (PL1) in front of the app. Round 4 (590-payload SecLists corpus across all 4 configs) has raw results (`attack-sim/results_config{1,2,3a,3b}.json`) but the analysis comparing "evaded WAF, caught by logsguardian" is not yet written up.
 
 ---
 
-## Section 4 — Next actions (updated)
+## Section 4 — Next actions
 
-### Action 1 — Build `packages/core/` middleware (LIBRARY ENGINEER)
-`parity_report.json` is cleared. Build `src/worker.ts` (loads ONNX sessions, exposes inference queue), `src/middleware.ts` (normalizes req → CanonicalRequest, calls extractor, dispatches to worker), `src/store.ts` (SQLite event log), `src/types.ts` (public API).
-
-Key contracts from `parity_report.json`:
-- `n_features = 66` — drop the 6 excluded features before passing vector to ONNX
-- `threshold_if = 0.02901575` — IF score < threshold → anomaly flag (if_v2, recalibrated for FP<=0.08)
-- `if_onnx_output_index = 1` — scores are at output index 1, not 0
-- `rf_onnx_output_index = 1` — probabilities are at output index 1
-- `rf_classes = ["benign","cmdi","path_traversal","sqli","xss"]` — class order in proba vector
-
-### Action 2 — Document decision policy (DIEGO or BOTH)
-`docs/decision-policy.md` — how RF and IF verdicts combine. Draft pseudocode based on F3.7 from PLAN.md before the middleware wires the logic.
-
-### Action 3 — Extractor benchmark F1.8 (LIBRARY ENGINEER)
-`benchmarks/extractor.bench.ts` — p50/p95/p99 latency per request. Criterion: p95 ≤ 1ms.
-
----
-
-## Section 5 — Critical path to first working middleware
-
-```
-parity_report.json ✓ CLEARED
-  → packages/core/src/worker.ts (load ONNX, warmup, message queue)
-    → packages/core/src/middleware.ts (extractor call + worker dispatch)
-      → Supertest: SQLi payload → 403, legit → pass
-        → app.use(logsguardian()) running inference  ← first working middleware
-```
-
----
-
-## Train/Serve Skew — Temporal Features (RESOLVED)
-
-**Reported by:** Sebastián (2026-06-14)  
-**Claim:** "Group 9" — 5 temporal features — are always 0 at runtime but populated during training.
-
-**Finding:** No train/serve skew exists. The decision to exclude these features was already made and executed before any model training.
-
-### What "Group 9" is in the source code
-
-`packages/extractor/src/index.ts` comment at line 56 labels 5 features as Group 9:
-```
-req_count_1s, req_count_5s, req_count_60s,
-error_rate_4xx_60s, endpoint_diversity_60s
-```
-These 5 are always hardcoded to 0 (see `TEMPORAL_FEATURES` constant at line 66). This is by design.
-
-### The 6th excluded feature Sebastián missed
-
-`status_code` is in **Group 8** (HTTP request features, line 55) — not Group 9 — but is equally unavailable at RASP intercept time. It is a response field: the response does not exist when the middleware intercepts the request. It was included in Group 8 to support dataset sources that include response codes (owasp_logs, russellmitchell), but must be excluded from training for the same reason as the temporal features.
-
-### What the ML pipeline actually did
-
-`training/FEATURE_NOTES.md` documents the correct 6-feature exclusion applied before training:
-
-| Feature | Group | Reason for exclusion |
-|---------|-------|---------------------|
-| `status_code` | 8 (HTTP) | Response field — unavailable at intercept time |
-| `req_count_1s` | 9 (temporal) | Requires cross-request state |
-| `req_count_5s` | 9 (temporal) | Same |
-| `req_count_60s` | 9 (temporal) | Same |
-| `error_rate_4xx_60s` | 9 (temporal) | Response codes + cross-request state |
-| `endpoint_diversity_60s` | 9 (temporal) | Cross-request state |
-
-These 6 were dropped from `features.csv` before `split.py` ran. The split parquets never contained them. The notebook `DROP_COLS` lists include all 6. `parity_report.json` confirms `n_features=66`.
-
-### Why these features appeared non-zero in some datasets
-
-`owasp_logs` and `russellmitchell` are log-based datasets built from completed HTTP exchanges. They include response codes (`status_code`) and sometimes aggregated fields that map loosely to the temporal features. These values appear non-zero in the raw JSONL but are **response-time artifacts** — they do not represent data available at request-intercept time in production.
-
-### Resolution
-
-No retraining required. No re-split required. The models were trained correctly on 66 features that are all computable at request-intercept time.
-
-**Worker_thread contract:** extract all 72 features via `extractFeatureVector()`, then slice to 66 by dropping the 6 excluded features in the same order they appear in `FEATURE_NAMES`. The ONNX sessions expect exactly 66 inputs.
-
-The list of features to drop, in `FEATURE_NAMES` index order:
-```typescript
-// indices 66-71 (Group 9: status_code + behavioural rate features)
-const EXCLUDED_FEATURE_INDICES = [66, 67, 68, 69, 70, 71];
-// names: status_code, req_count_1s, req_count_5s, req_count_60s,
-//        error_rate_4xx_60s, endpoint_diversity_60s
-```
+1. **Resolve the Δp95 latency criterion wording** (Section 2) — needed before any final thesis reporting of OE3 as met.
+2. **Actual `npm publish`** — everything in Section 1 is ready; publishing itself has not been run.
+3. **Config 3 write-up** — turn the Round 4 raw results into the evasion-rate analysis originally scoped.
+4. Optional: verify/update `docs/architecture.md` §2's dataset numbers if a source of truth is available; investigate the broader `middleware.test.ts` timing-flakiness pattern (fake timers) if it starts causing real CI noise.

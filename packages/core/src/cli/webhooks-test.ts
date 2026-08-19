@@ -27,8 +27,14 @@ export async function runWebhooksTest(args: string[]): Promise<void> {
   const config = requireConfig() as unknown as MiddlewareOptions;
 
   const raw = args[0];
-  const id = raw !== undefined ? parseInt(raw, 10) : NaN;
-  if (raw === undefined || !Number.isInteger(id) || String(id) !== raw) {
+  if (raw === undefined) {
+    console.error("logsguardian: webhooks test requires an id argument");
+    console.error("Usage: logsguardian webhooks test <id>");
+    process.exit(1);
+  }
+  const id = parseInt(raw, 10);
+  if (!Number.isInteger(id) || String(id) !== raw) {
+    console.error(`logsguardian: invalid id '${raw}' — must be a positive integer`);
     console.error("Usage: logsguardian webhooks test <id>");
     process.exit(1);
   }

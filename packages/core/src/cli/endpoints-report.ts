@@ -1,7 +1,7 @@
 import * as fs from "fs";
 import * as path from "path";
 import Database from "better-sqlite3";
-import { requireConfig } from "./guard";
+import { requireConfig, parseFormat } from "./guard";
 import type { MiddlewareOptions } from "../types";
 
 interface AttackTypeCount {
@@ -24,15 +24,7 @@ interface EndpointReportRow {
 export function runEndpointsReport(args: string[]): void {
   const config = requireConfig() as unknown as MiddlewareOptions;
 
-  const format = (() => {
-    const idx = args.indexOf("--format");
-    const f = idx !== -1 ? args[idx + 1] : "json";
-    if (f !== "json" && f !== "csv") {
-      console.error(`logsguardian: --format must be 'json' or 'csv', got '${f}'`);
-      process.exit(1);
-    }
-    return f;
-  })();
+  const format = parseFormat(args, ["json", "csv"] as const, "json");
 
   const outputPath = (() => {
     const idx = args.indexOf("--output");
