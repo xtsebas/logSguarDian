@@ -54,3 +54,8 @@ training/models/*.pkl
 # avoid duplicating the binaries in git (training/models/ is the source of truth)
 packages/core/models/*.onnx
 *.tgz
+
+# SQLite runtime artifacts (EventStore/WebhookStore dbPath default) — dev/test
+# output, not source. Accidentally committed once (see .claude/decisiones.md).
+*.db
+*.db-journal
