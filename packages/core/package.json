@@ -2,7 +2,34 @@
   "name": "logsguardian",
   "version": "0.1.0",
   "description": "Middleware RASP de deteccion de amenazas (SQLi, XSS, Path Traversal, Command Injection) para Node.js/Express, con inferencia ONNX (Random Forest + Isolation Forest)",
+  "keywords": [
+    "rasp",
+    "security",
+    "middleware",
+    "express",
+    "waf",
+    "sqli",
+    "xss",
+    "path-traversal",
+    "command-injection",
+    "intrusion-detection",
+    "machine-learning",
+    "onnx"
+  ],
+  "homepage": "https://github.com/xtsebas/logSguarDian/tree/main/packages/core#readme",
+  "bugs": {
+    "url": "https://github.com/xtsebas/logSguarDian/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/xtsebas/logSguarDian.git",
+    "directory": "packages/core"
+  },
   "license": "MIT",
+  "contributors": [
+    { "name": "Sebastian Huertas" },
+    { "name": "Diego Valenzuela" }
+  ],
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "bin": {
