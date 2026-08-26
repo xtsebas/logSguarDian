@@ -542,6 +542,34 @@ describe("logsguardian — webhook", () => {
     expect(JSON.parse(registeredBody).verdict).toBe("block");
   });
 
+  test("fires to every registered webhook when several are added — none missed, none cross-delivered", async () => {
+    const N = 5;
+    const receivers = await Promise.all(Array.from({ length: N }, () => startReceiver()));
+    const dbPath = tmpDb();
+    const store = new WebhookStore(dbPath);
+    for (const r of receivers) store.add(r.url);
+    store.close();
+
+    const app = makeApp({ mode: "block", threshold: 0.70, timeoutMs: 500, dbPath }); // no static webhookUrl
+    mockResponse(SQLI_HIGH, IF_NORMAL);
+
+    await httpGet(app, "/?id=1 OR 1=1");
+    const bodies = await Promise.all(receivers.map((r) => r.waitForBody()));
+    await Promise.all(receivers.map((r) => new Promise<void>((res) => r.server.close(() => res()))));
+
+    // Every one of the N independent HTTP servers received its own POST —
+    // sendWebhook() is called once per registered row (middleware.ts's
+    // `for (const w of registeredWebhooks) sendWebhook(w.url, event)`), not
+    // just the first or a random subset.
+    expect(bodies).toHaveLength(N);
+    for (const raw of bodies) {
+      expect(raw).not.toBe(""); // waitForBody()'s 500ms fallback returns "" if nothing arrived
+      const parsed = JSON.parse(raw);
+      expect(parsed.verdict).toBe("block");
+      expect(parsed.predicted_class).toBe("sqli");
+    }
+  });
+
   test("no webhookUrl and no registered webhooks: block verdict is still logged, nothing thrown, webhook_sent=false", async () => {
     const dbPath = tmpDb();
     const app = makeApp({ mode: "block", threshold: 0.70, timeoutMs: 500, dbPath }); // no webhookUrl, empty webhooks table
