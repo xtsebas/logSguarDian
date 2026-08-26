@@ -1,7 +1,7 @@
 import * as fs from "fs";
 import * as path from "path";
 import Database from "better-sqlite3";
-import { requireConfig, parseFormat } from "./guard";
+import { requireConfig, parseFormat, dbPathMismatchHint } from "./guard";
 import type { MiddlewareOptions } from "../types";
 
 const DEFAULT_LIMIT = 10;
@@ -77,14 +77,15 @@ export function runEndpointsTop(args: string[]): void {
     return;
   }
 
-  printTable(ranked);
+  printTable(ranked, dbPath);
 }
 
-function printTable(rows: EndpointRow[]): void {
+function printTable(rows: EndpointRow[], dbPath: string): void {
   console.log("\nlogSguarDian — Top Endpoints by Attack Frequency\n");
 
   if (rows.length === 0) {
     console.log("  No detection events found.\n");
+    console.log(dbPathMismatchHint(dbPath));
     return;
   }
 

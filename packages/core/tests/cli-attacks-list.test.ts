@@ -147,6 +147,12 @@ describe("attacks list", () => {
       spy.mockRestore();
 
       expect(output).toContain("No attack types classified yet.");
+      // The dbPath-mismatch hint (guard.ts's dbPathMismatchHint()) — added after
+      // this exact failure mode cost real debugging time against a live app
+      // whose dbPath diverged from logsguardian.config.js's. Must name the
+      // actual resolved dbPath, not just a generic "check your config" message.
+      expect(output).toContain(path.join(dir, "logsguardian.db"));
+      expect(output).toContain("logsguardian(options)");
     });
   });
 });
