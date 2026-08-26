@@ -18,6 +18,19 @@ export interface MiddlewareOptions {
   modelDir?: string;
   /** HTTP(S) URL to POST a JSON DetectionEvent when verdict is 'block' or 'pass_anomaly'. */
   webhookUrl?: string;
+  /** Opt-in: HTTP(S) URL of an MLOps telemetry collector. When set, every request's 73-feature vector is POSTed fire-and-forget (never the raw payload). Default: unset (disabled). */
+  telemetryUrl?: string;
+  /** Identifier for this host in telemetry events, so a central collector can distinguish multiple deployments. Default: os.hostname(). */
+  sourceId?: string;
+}
+
+/** Vector telemetry sent to an MLOps collector when telemetryUrl is set. Never includes the raw request payload. */
+export interface TelemetryEvent {
+  vector: number[];
+  predicted_class: AttackClass;
+  confidence: number;
+  timestamp: number;
+  source_id: string;
 }
 
 /** Single detection event written to the SQLite log. */

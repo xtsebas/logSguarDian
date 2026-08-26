@@ -105,6 +105,15 @@ describe("config set — valid updates", () => {
     });
   });
 
+  test("sets telemetry URL, persisted as telemetryUrl", () => {
+    withTempDir((dir) => {
+      runConfigInit();
+      runConfigSet(["telemetry", "http://127.0.0.1:4790/telemetry"]);
+      const config = loadConfig(dir);
+      expect(config.telemetryUrl).toBe("http://127.0.0.1:4790/telemetry");
+    });
+  });
+
   test("other keys are preserved after setting threshold", () => {
     withTempDir((dir) => {
       runConfigInit();
@@ -191,6 +200,20 @@ describe("config set — invalid input", () => {
     withTempDir(() => {
       runConfigInit();
       expectExit1(() => runConfigSet(["model", "bert"]));
+    });
+  });
+
+  test("exits 1 for a malformed telemetry URL", () => {
+    withTempDir(() => {
+      runConfigInit();
+      expectExit1(() => runConfigSet(["telemetry", "not-a-url"]));
+    });
+  });
+
+  test("exits 1 for a telemetry URL with an unsupported protocol", () => {
+    withTempDir(() => {
+      runConfigInit();
+      expectExit1(() => runConfigSet(["telemetry", "ftp://example.com/telemetry"]));
     });
   });
 

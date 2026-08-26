@@ -83,7 +83,8 @@ switch (command) {
       console.error(`logsguardian: failed to send test webhook — ${(err as Error).message}`);
       process.exit(1);
     });
-    
+    break;
+
   case "webhooks list":
     runWebhooksList(commandArgs);
     break;
@@ -95,7 +96,7 @@ switch (command) {
     console.log("Commands:");
     console.log("  config init              Generate logsguardian.config.js with default values");
     console.log("  config show              Print the active configuration");
-    console.log("  config set <key> <value> Modify a config key (threshold, mode, model)");
+    console.log("  config set <key> <value> Modify a config key (threshold, mode, model, telemetry)");
     console.log("  config validate          Check configuration coherence and model file existence");
     console.log("  attacks list             List attack types classified, with counts and last seen");
     console.log("  attacks summary          Attack type distribution by endpoint, period, and severity");

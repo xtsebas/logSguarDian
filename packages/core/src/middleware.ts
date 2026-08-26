@@ -48,11 +48,13 @@
  */
 import { Worker } from "worker_threads";
 import * as path from "path";
+import * as os from "os";
 import type { Request, Response, NextFunction, RequestHandler } from "express";
-import { normalizeCanonicalRequest } from "@logsguardian/extractor";
+import { normalizeCanonicalRequest, extractFeatureVector } from "@logsguardian/extractor";
 import { EventStore } from "./store";
 import { WebhookStore } from "./webhook-store";
 import { sendWebhook } from "./webhook";
+import { sendTelemetry } from "./telemetry";
 import type {
   AttackClass,
   DetectionEvent,
@@ -113,6 +115,8 @@ export function logsguardian(options: MiddlewareOptions = {}): RequestHandler {
   const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
   const modelDir = options.modelDir ?? DEFAULT_MODEL_DIR;
   const webhookUrl = options.webhookUrl;
+  const telemetryUrl = options.telemetryUrl;
+  const sourceId = options.sourceId ?? os.hostname();
 
   let store: EventStore | null = null;
   try {
@@ -404,6 +408,19 @@ export function logsguardian(options: MiddlewareOptions = {}): RequestHandler {
     if (needsWebhook) {
       if (webhookUrl) sendWebhook(webhookUrl, event);
       for (const w of registeredWebhooks) sendWebhook(w.url, event);
+    }
+
+    // Opt-in MLOps telemetry: fire-and-forget POST of the feature vector only,
+    // never the raw payload. Sent for every request (not just notifiable ones)
+    // so the collector sees a representative traffic sample, not just attacks.
+    if (telemetryUrl) {
+      sendTelemetry(telemetryUrl, {
+        vector: extractFeatureVector(canonical),
+        predicted_class: result.predicted_class,
+        confidence: result.confidence,
+        timestamp: t0,
+        source_id: sourceId,
+      });
     }
 
     // Track this row for a possible late IF patch — only when IF hadn't answered
