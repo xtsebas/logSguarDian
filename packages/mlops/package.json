@@ -6,7 +6,8 @@
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "bin": {
-    "mlops-collector": "dist/collector/bin.js"
+    "mlops-collector": "dist/collector/bin.js",
+    "mlops": "dist/cli.js"
   },
   "engines": {
     "node": ">=20"
@@ -15,7 +16,8 @@
     "build": "tsc -p tsconfig.json",
     "test": "jest",
     "collector": "ts-node src/collector/bin.ts",
-    "simulate-fleet": "ts-node src/simulate-fleet.ts"
+    "simulate-fleet": "ts-node src/simulate-fleet.ts",
+    "mlops": "ts-node src/cli.ts"
   },
   "dependencies": {
     "@logsguardian/extractor": "workspace:*",
