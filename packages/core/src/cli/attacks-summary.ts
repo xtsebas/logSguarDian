@@ -1,7 +1,7 @@
 import * as fs from "fs";
 import * as path from "path";
 import Database from "better-sqlite3";
-import { requireConfig, parseFormat } from "./guard";
+import { requireConfig, parseFormat, dbPathMismatchHint } from "./guard";
 import type { MiddlewareOptions } from "../types";
 
 type Severity = "high" | "medium" | "low";
@@ -103,14 +103,15 @@ export function runAttacksSummary(args: string[]): void {
     return;
   }
 
-  printTable(rows);
+  printTable(rows, dbPath);
 }
 
-function printTable(rows: SummaryRow[]): void {
+function printTable(rows: SummaryRow[], dbPath: string): void {
   console.log("\nlogSguarDian — Attack Summary\n");
 
   if (rows.length === 0) {
     console.log("  No attack types classified in this range.\n");
+    console.log(dbPathMismatchHint(dbPath));
     return;
   }
 

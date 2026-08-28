@@ -1,7 +1,7 @@
 import * as fs from "fs";
 import * as path from "path";
 import Database from "better-sqlite3";
-import { requireConfig, parseFormat } from "./guard";
+import { requireConfig, parseFormat, dbPathMismatchHint } from "./guard";
 import type { MiddlewareOptions } from "../types";
 
 interface AttackTypeRow {
@@ -47,14 +47,15 @@ export function runAttacksList(args: string[]): void {
     return;
   }
 
-  printTable(rows);
+  printTable(rows, dbPath);
 }
 
-function printTable(rows: AttackTypeRow[]): void {
+function printTable(rows: AttackTypeRow[], dbPath: string): void {
   console.log("\nlogSguarDian — Attack Type Catalog\n");
 
   if (rows.length === 0) {
     console.log("  No attack types classified yet.\n");
+    console.log(dbPathMismatchHint(dbPath));
     return;
   }
 

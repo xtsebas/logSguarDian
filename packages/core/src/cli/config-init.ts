@@ -20,7 +20,16 @@ module.exports = {
   /** Fail-open timeout in ms. If inference takes longer the request is passed through. */
   timeoutMs: 50,
 
-  /** Path to the SQLite event log. Created automatically on first run. */
+  /** Path to the SQLite event log. Created automatically on first run.
+   *  IMPORTANT: the CLI (attacks/endpoints/webhooks commands) reads dbPath
+   *  from THIS file. The middleware reads dbPath from whatever object you
+   *  actually pass to logsguardian(options) at runtime. These only stay in
+   *  sync if your app does:
+   *    app.use(logsguardian(require('./logsguardian.config.js')));
+   *  If your app instead hardcodes its own options (a different dbPath, or
+   *  none at all), the CLI will silently read a different, empty database
+   *  than the one your app is writing to — no error, it just looks like
+   *  nothing was ever detected. */
   dbPath: './logsguardian.db',
 };
 `;

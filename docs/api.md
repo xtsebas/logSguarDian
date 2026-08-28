@@ -261,6 +261,16 @@ Command groups: `config`, `attacks`, `endpoints`, `webhooks`. Full reference: `d
 
 All CLI commands other than `config init` require `logsguardian.config.js` to exist in `process.cwd()`. If it does not, the command exits with code 1 and prints instructions to run `logsguardian config init` first.
 
+### Common gotcha: `dbPath` mismatch between the CLI and the running middleware
+
+The CLI (`attacks`/`endpoints`/`webhooks` commands) reads `dbPath` from `logsguardian.config.js`. The middleware reads `dbPath` from whatever options object your app actually passes to `logsguardian(options)`. These are two independent processes with no shared state — they only stay in sync if your app does:
+
+```js
+app.use(logsguardian(require('./logsguardian.config.js')));
+```
+
+If your app instead hardcodes its own options object (a different `dbPath`, or one derived some other way), the CLI will open a **different, valid, empty** SQLite file than the one your app is actually writing detection events to. This fails silently — no error, both files are legitimate — it just looks like nothing was ever detected. `attacks list`, `attacks summary`, `endpoints top`, and `endpoints profile` all print a hint pointing at this exact possibility whenever they return zero rows.
+
 ---
 
 ## Exports

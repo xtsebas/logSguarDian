@@ -1,7 +1,7 @@
 import * as fs from "fs";
 import * as path from "path";
 import Database from "better-sqlite3";
-import { requireConfig, parseFormat } from "./guard";
+import { requireConfig, parseFormat, dbPathMismatchHint } from "./guard";
 import type { MiddlewareOptions } from "../types";
 
 interface AttackTypeRow {
@@ -131,14 +131,15 @@ export function runEndpointsProfile(args: string[]): void {
     return;
   }
 
-  printProfile(profile);
+  printProfile(profile, dbPath);
 }
 
-function printProfile(p: RouteProfile): void {
+function printProfile(p: RouteProfile, dbPath: string): void {
   console.log(`\nlogSguarDian — Route Profile: ${p.path}\n`);
 
   if (p.total_incidents === 0) {
     console.log("  No detection events found for this route.\n");
+    console.log(dbPathMismatchHint(dbPath));
     return;
   }
 
