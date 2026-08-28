@@ -58,3 +58,8 @@ packages/core/models/*.onnx
 # MLOps: generated SQLite telemetry / SQLite databases (regenerate via simulate-fleet)
 *.db
 packages/mlops/data/
+
+# MLOps CT pipeline: candidate models and production backups (training/ct_pipeline.py) —
+# regenerable, never committed; only a promoted (Fase 8) rf.onnx/if.onnx is tracked
+training/models/*_candidate*.onnx
+training/models/.*.production_backup
