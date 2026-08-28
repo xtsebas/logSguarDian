@@ -14,12 +14,14 @@
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "test": "jest",
-    "collector": "ts-node src/collector/bin.ts"
+    "collector": "ts-node src/collector/bin.ts",
+    "simulate-fleet": "ts-node src/simulate-fleet.ts"
   },
   "dependencies": {
     "@logsguardian/extractor": "workspace:*",
     "better-sqlite3": "^11.0.0",
-    "express": "^4.19.0"
+    "express": "^4.19.0",
+    "logsguardian": "workspace:*"
   },
   "devDependencies": {
     "@types/better-sqlite3": "^7.6.9",
