@@ -54,3 +54,7 @@ training/models/*.pkl
 # avoid duplicating the binaries in git (training/models/ is the source of truth)
 packages/core/models/*.onnx
 *.tgz
+
+# MLOps: generated SQLite telemetry / SQLite databases (regenerate via simulate-fleet)
+*.db
+packages/mlops/data/
