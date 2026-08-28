@@ -128,9 +128,18 @@ def assert_clean_models_dir() -> None:
         sys.exit(1)
 
 
+def _latest_metadata_file(prefix: str) -> Path | None:
+    """Notebooks write rf_vN_metadata.json / if_vN_metadata.json with a
+    hand-bumped version number, not auto-incremented — glob by mtime
+    instead of guessing the current N."""
+    candidates = sorted(MODELS.glob(f"{prefix}_v*_metadata.json"), key=lambda p: p.stat().st_mtime)
+    return candidates[-1] if candidates else None
+
+
 def save_candidates() -> dict[str, Path]:
-    """Copies the notebooks' freshly-written rf.onnx/if.onnx to a timestamped
-    + a stable candidate filename, before production is restored."""
+    """Copies the notebooks' freshly-written rf.onnx/if.onnx (and their
+    metadata JSONs, needed by Fase 6's metric gate) to a timestamped + a
+    stable candidate filename, before production is restored."""
     ts = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
     candidates: dict[str, Path] = {}
     for name in ("rf.onnx", "if.onnx"):
@@ -144,6 +153,12 @@ def save_candidates() -> dict[str, Path]:
         shutil.copy(fresh, stable)
         candidates[name] = stable
         log(f"Candidate saved: {timestamped.name} (and {stable.name})")
+
+        metadata = _latest_metadata_file(stem)
+        if metadata:
+            metadata_stable = MODELS / f"{stem}_candidate_metadata.json"
+            shutil.copy(metadata, metadata_stable)
+            log(f"Candidate metadata saved: {metadata_stable.name} (from {metadata.name})")
     return candidates
 
 
@@ -197,7 +212,17 @@ def main() -> None:
     log(f"Curated telemetry rows merged: {merged_rows}")
     for name, path in candidates.items():
         log(f"Candidate: {path}")
-    log("Candidates are NOT yet APPROVED_FOR_CANARY — run Fase 6 gates next (training/ct_gates.py).")
+
+    sys.path.insert(0, str(TRAINING / "gates"))
+    from run_all_gates import run_all_gates  # noqa: E402
+
+    log("\nRunning Fase 6 gates...")
+    approved = run_all_gates(MODELS)
+    if approved:
+        log("Result: APPROVED_FOR_CANARY")
+    else:
+        log("Result: REJECTED — see gate report above for which gate failed and why.")
+        sys.exit(1)
 
 
 if __name__ == "__main__":

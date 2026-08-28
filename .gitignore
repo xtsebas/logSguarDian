@@ -50,6 +50,11 @@ training/models/*.pkl
 # IF pkls are small (~1MB) and needed for local reproducibility without re-running F3.5
 !training/models/if_v*.pkl
 
+# RF metadata JSON (Fase 6 gate input, training/gates/gate_metrics.py) — regenerated
+# alongside the gitignored RF pkl on every run, same treatment. IF's metadata JSON
+# stays tracked (if_v*_metadata.json), matching the IF pkl exception above.
+training/models/rf_v*_metadata.json
+
 # packages/core bundles ONNX models from training/models/ at build/publish time;
 # avoid duplicating the binaries in git (training/models/ is the source of truth)
 packages/core/models/*.onnx
@@ -62,4 +67,8 @@ packages/mlops/data/
 # MLOps CT pipeline: candidate models and production backups (training/ct_pipeline.py) —
 # regenerable, never committed; only a promoted (Fase 8) rf.onnx/if.onnx is tracked
 training/models/*_candidate*.onnx
+training/models/*_candidate_metadata.json
 training/models/.*.production_backup
+
+# Fase 6 gate reports (training/gates/run_all_gates.py) — one per run, regenerable
+training/results/gate_report_*.json
