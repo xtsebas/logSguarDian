@@ -18,7 +18,9 @@ const ort = require(
   path.join(__dirname, "../node_modules/.pnpm/onnxruntime-node@1.26.0/node_modules/onnxruntime-node")
 );
 
-const MODEL_DIR = path.join(__dirname, "../training/models");
+// Overridable so the CT pipeline's Fase 6 memory gate (training/gates/gate_memory.py)
+// can point this at a temp directory holding a candidate model.
+const MODEL_DIR = process.env.LOGSGUARDIAN_BENCH_MODEL_DIR || path.join(__dirname, "../training/models");
 const RF_N_FEATURES = 67;
 const IF_N_FEATURES = 61;
 

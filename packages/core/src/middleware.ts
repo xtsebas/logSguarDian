@@ -48,14 +48,19 @@
  */
 import { Worker } from "worker_threads";
 import * as path from "path";
-import type { Request, Response, NextFunction, RequestHandler } from "express";
-import { normalizeCanonicalRequest } from "@logsguardian/extractor";
+import * as os from "os";
+import type { Request, Response, NextFunction } from "express";
+import { normalizeCanonicalRequest, extractFeatureVector } from "@logsguardian/extractor";
 import { EventStore } from "./store";
 import { WebhookStore } from "./webhook-store";
+import { CanaryStore } from "./canary-store";
 import { sendWebhook } from "./webhook";
+import { sendTelemetry } from "./telemetry";
 import type {
   AttackClass,
+  CanaryComparison,
   DetectionEvent,
+  LogsguardianHandler,
   MiddlewareOptions,
   Verdict,
   WorkerRequest,
@@ -67,6 +72,18 @@ const IF_THRESHOLD = 0.002486040118540811;
 const RF_CLASSES: AttackClass[] = ["benign", "cmdi", "path_traversal", "sqli", "xss"];
 
 const DEFAULT_TIMEOUT_MS = 50;
+// Fase 7: how long a canary comparison waits for its shadow reply before
+// giving up, completely decoupled from the production request's own
+// timeoutMs (which must stay short for real responsiveness — canary never
+// blocks anything, so it can afford to be patient). A single canary worker
+// has no pool the way IF does (see docs/results.md §A24's concurrent-call
+// serialization finding — the same mechanism), so under a fast back-to-back
+// corpus replay its queued inference calls can genuinely take tens of
+// seconds; reusing the production timeoutMs (as low as the 50ms default)
+// for canary's cleanup was dropping the vast majority of comparisons before
+// their replies ever arrived — confirmed empirically during Fase 7's own
+// verification (canary-replay.ts's Test 1).
+const CANARY_CONTEXT_TIMEOUT_MS = 60_000;
 const DEFAULT_MODEL_DIR = path.join(__dirname, "..", "models");
 const IF_POOL_SIZE = 2;
 
@@ -93,6 +110,31 @@ interface PendingLogPatch {
   cleanupTimer: ReturnType<typeof setTimeout>;
 }
 
+/** Fase 7: the production event a late canary reply needs to compare
+ * against. Parallel to PendingLogPatch, deliberately not shared with it —
+ * see the pendingCanaryContext declaration for why. */
+interface PendingCanaryContext {
+  event: DetectionEvent;
+  cleanupTimer: ReturnType<typeof setTimeout>;
+}
+
+/** Fase 7: a canary reply that arrived BEFORE trackForCanary() had a chance
+ * to register the production event it needs to compare against. This is
+ * the common case, not an edge case: canary is RF-shaped and comparably
+ * fast, dispatched at the same instant as production RF, but
+ * trackForCanary() doesn't run until well after infer() resolves (webhook
+ * checks, telemetry, event construction) — there is no guarantee, unlike
+ * IF's measured-slower-than-RF case, that canary is ever "late". Mirrors
+ * PendingEntry's ifScore/ifDone fields, which handle the exact same
+ * early-arrival case for IF beating RF — kept as its own map instead of
+ * folding into PendingEntry because canary tracking must survive past
+ * finalizeRequest() deleting the PendingEntry (production's response
+ * doesn't wait for canary either way). */
+interface EarlyCanaryReply {
+  rfProbs: number[];
+  cleanupTimer: ReturnType<typeof setTimeout>;
+}
+
 interface PendingEntry {
   resolved: boolean;
   rfProbs?: number[];
@@ -107,12 +149,14 @@ interface PendingEntry {
 
 let _requestId = 0;
 
-export function logsguardian(options: MiddlewareOptions = {}): RequestHandler {
+export function logsguardian(options: MiddlewareOptions = {}): LogsguardianHandler {
   const mode = options.mode ?? "block";
   const userThreshold = options.threshold;
   const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
   const modelDir = options.modelDir ?? DEFAULT_MODEL_DIR;
   const webhookUrl = options.webhookUrl;
+  const telemetryUrl = options.telemetryUrl;
+  const sourceId = options.sourceId ?? os.hostname();
 
   let store: EventStore | null = null;
   try {
@@ -145,6 +189,23 @@ export function logsguardian(options: MiddlewareOptions = {}): RequestHandler {
   // retriggers onnxruntime-node's concurrent-call growth (see worker.ts).
   let readyIfWorkers: Worker[] = [];
   let nextIfWorkerIndex = 0;
+
+  // Fase 7: canary/candidate model, on-demand only — never spawned by
+  // default (see docs/results.md's real 4-worker memory measurement).
+  // A completely separate tracking map from pendingLogPatches, even though
+  // both exist to let a late worker reply find its request's already-sent
+  // production result: IF's late-patch logic is proven, security-relevant
+  // production behavior with real incident history (grace window, sync
+  // double-write) — this keeps canary's parallel bookkeeping from ever
+  // touching that code path, at the cost of one extra small map.
+  let canaryWorker: Worker | null = null;
+  let canaryReady = false;
+  let canaryStore: CanaryStore | null = null;
+  const pendingCanaryContext = new Map<number, PendingCanaryContext>();
+  // Canary replies that arrived before trackForCanary() registered the
+  // production event — see EarlyCanaryReply's doc comment for why this is
+  // the common case, not an edge case.
+  const earlyCanaryReplies = new Map<number, EarlyCanaryReply>();
 
   function applyPolicy(rfProbs: number[] | undefined, ifScore: number | undefined): Omit<CombinedResult, "requestId" | "ifPending"> {
     if (!rfProbs) {
@@ -245,6 +306,68 @@ export function logsguardian(options: MiddlewareOptions = {}): RequestHandler {
     if (process.env.LOGSGUARDIAN_GRACE_DEBUG) console.error(JSON.stringify({ id: msg.id, path: "if-beat-rf-waiting-for-rf" }));
   }
 
+  /** Fase 7: computes and persists the comparison once both sides are known
+   * — the production event (from trackForCanary) and canary's raw RF probs
+   * (from whichever side of the race actually has them). Never touches the
+   * response; called well after it's already gone out either way. */
+  function logCanaryComparison(requestId: number, event: DetectionEvent, canaryRfProbs: number[] | undefined): void {
+    const canaryPolicy = applyPolicy(canaryRfProbs, undefined);
+
+    // 'pass' and 'pass_anomaly' are both "not blocked" (IF never has blocking
+    // authority — decision-policy.md §3), and canary has no IF score of its
+    // own so its verdict is always 'block' or 'pass'. Comparing raw block/
+    // not-block avoids a misleading mismatch purely from the pass vs
+    // pass_anomaly distinction, which says nothing about the candidate.
+    const productionBlocked = event.verdict === "block";
+    const canaryBlocked = canaryPolicy.verdict === "block";
+
+    const comparison: CanaryComparison = {
+      request_id: requestId,
+      timestamp: event.timestamp,
+      production_verdict: event.verdict,
+      production_predicted_class: event.predicted_class,
+      production_confidence: event.confidence,
+      canary_verdict: canaryPolicy.verdict,
+      canary_predicted_class: canaryPolicy.predicted_class,
+      canary_confidence: canaryPolicy.confidence,
+      verdict_match: productionBlocked === canaryBlocked,
+      class_match: canaryPolicy.predicted_class === event.predicted_class,
+      confidence_delta: Math.abs(canaryPolicy.confidence - event.confidence),
+    };
+    try { canaryStore?.log(comparison); } catch { /* non-fatal */ }
+  }
+
+  /** Fase 7: canary can arrive either before or after trackForCanary()
+   * registers the production event (see EarlyCanaryReply's doc comment) —
+   * this handles the "late" half of that race. The "early" half is handled
+   * inline here too: if trackForCanary() hasn't run yet, buffer the raw
+   * reply instead of dropping it. */
+  function handleCanaryMessage(msg: WorkerResponse): void {
+    if ("error" in msg) {
+      if (process.env.LOGSGUARDIAN_GRACE_DEBUG) console.error(JSON.stringify({ id: msg.id, path: "canary-inference-error", error: msg.error }));
+      return;
+    }
+    const canaryRfProbs = msg.role === "canary" ? msg.rfProbs : undefined;
+    if (canaryRfProbs === undefined) return;
+
+    const ctx = pendingCanaryContext.get(msg.id);
+    if (ctx) {
+      // Late case: production's event was already registered.
+      clearTimeout(ctx.cleanupTimer);
+      pendingCanaryContext.delete(msg.id);
+      logCanaryComparison(msg.id, ctx.event, canaryRfProbs);
+      return;
+    }
+
+    // Early case: canary beat trackForCanary() to it. Buffer the raw reply;
+    // trackForCanary() will find it and log the comparison itself once the
+    // production event is known. Bounded by the same timeout as the late
+    // case so an early reply for a request that's later skipped (e.g. mode
+    // check finds verdict === 'timeout') doesn't leak.
+    const cleanupTimer = setTimeout(() => { earlyCanaryReplies.delete(msg.id); }, CANARY_CONTEXT_TIMEOUT_MS);
+    earlyCanaryReplies.set(msg.id, { rfProbs: canaryRfProbs, cleanupTimer });
+  }
+
   try {
     const workerPath = path.join(__dirname, "worker.js");
 
@@ -298,6 +421,60 @@ export function logsguardian(options: MiddlewareOptions = {}): RequestHandler {
     readyIfWorkers = [];
   }
 
+  /** Fase 7: spawns the on-demand canary worker, loading candidateModelPath
+   * (an RF-shaped ONNX model, e.g. training/models/rf_candidate.onnx) via
+   * worker.ts's modelFile override. Resolves once the worker signals
+   * readiness — matching the same readiness-gate discipline as RF/IF (see
+   * worker.ts's module doc on the cold-start burst bug this pattern
+   * prevents). Rejects if the worker fails to start or load. Calling this
+   * twice without closeCanaryWorker() in between leaks the previous worker;
+   * callers (the corpus-replay script) are expected to spawn once per run. */
+  function spawnCanaryWorker(candidateModelPath: string): Promise<void> {
+    return new Promise((resolve, reject) => {
+      const workerPath = path.join(__dirname, "worker.js");
+      const worker = new Worker(workerPath, {
+        workerData: {
+          role: "canary",
+          modelDir: path.dirname(candidateModelPath),
+          modelFile: path.basename(candidateModelPath),
+        },
+      });
+      worker.on("message", (msg: WorkerResponse | { ready: true; role: "canary" }) => {
+        if ("ready" in msg) {
+          canaryReady = true;
+          resolve();
+          return;
+        }
+        handleCanaryMessage(msg);
+      });
+      worker.on("error", (err) => {
+        canaryWorker = null;
+        canaryReady = false;
+        reject(err);
+      });
+      canaryWorker = worker;
+
+      if (!canaryStore) {
+        try { canaryStore = new CanaryStore(options.dbPath); } catch { /* non-fatal; comparisons won't persist */ }
+      }
+    });
+  }
+
+  /** Fase 7: tears down the canary worker and closes its store — safe to
+   * call even if no canary worker was ever spawned. */
+  function closeCanaryWorker(): void {
+    // Same fire-and-forget rationale as close()'s worker termination.
+    canaryWorker?.terminate();
+    canaryWorker = null;
+    canaryReady = false;
+    for (const ctx of pendingCanaryContext.values()) clearTimeout(ctx.cleanupTimer);
+    pendingCanaryContext.clear();
+    for (const early of earlyCanaryReplies.values()) clearTimeout(early.cleanupTimer);
+    earlyCanaryReplies.clear();
+    canaryStore?.close();
+    canaryStore = null;
+  }
+
   function infer(canonical: import("@logsguardian/extractor").CanonicalRequest): Promise<CombinedResult> {
     return new Promise((resolve) => {
       const id = ++_requestId;
@@ -340,11 +517,18 @@ export function logsguardian(options: MiddlewareOptions = {}): RequestHandler {
       } else if (process.env.LOGSGUARDIAN_GRACE_DEBUG) {
         console.error(JSON.stringify({ id, path: "NO-IF-WORKERS-AVAILABLE" }));
       }
+
+      // Fase 7: same fire-and-forget fan-out as IF — dispatched only when a
+      // canary worker is active (the common case is no canary at all, in
+      // which case this is a no-op). Never affects rfTimer/finalizeRequest.
+      if (canaryWorker && canaryReady) {
+        canaryWorker.postMessage(req);
+      }
       // If no IF worker is available, ifScore simply never arrives — same as an IF timeout.
     });
   }
 
-  return async function logsguardianMiddleware(
+  const logsguardianMiddleware = async function logsguardianMiddleware(
     req: Request,
     res: Response,
     next: NextFunction
@@ -417,6 +601,19 @@ export function logsguardian(options: MiddlewareOptions = {}): RequestHandler {
       for (const w of registeredWebhooks) sendWebhook(w.url, event);
     }
 
+    // Opt-in MLOps telemetry: fire-and-forget POST of the feature vector only,
+    // never the raw payload. Sent for every request (not just notifiable ones)
+    // so the collector sees a representative traffic sample, not just attacks.
+    if (telemetryUrl) {
+      sendTelemetry(telemetryUrl, {
+        vector: extractFeatureVector(canonical),
+        predicted_class: result.predicted_class,
+        confidence: result.confidence,
+        timestamp: t0,
+        source_id: sourceId,
+      });
+    }
+
     // Track this row for a possible late IF patch — only when IF hadn't answered
     // yet (ifPending) and the verdict came from a real RF reply. 'timeout' rows
     // (RF itself failed) never get IF's score patched in, unchanged from before
@@ -429,13 +626,67 @@ export function logsguardian(options: MiddlewareOptions = {}): RequestHandler {
       }
     };
 
+    // Fase 7: canary is comparably fast to production RF, so its reply can
+    // easily arrive before this runs (id=1 hit this on the very first
+    // request during Fase 7's own verification — not a rare edge case).
+    // Check for an already-buffered early reply first; only fall back to
+    // registering pendingCanaryContext (the "wait for a late reply" case)
+    // if canary hasn't answered yet. Skipped for 'timeout' rows for the
+    // same reason IF's patch is: a fail-open decision isn't a real
+    // production verdict to hold a candidate model accountable to.
+    const trackForCanary = (): void => {
+      if (!canaryWorker || !canaryReady || result.verdict === "timeout") return;
+      const requestId = result.requestId;
+
+      const early = earlyCanaryReplies.get(requestId);
+      if (early) {
+        clearTimeout(early.cleanupTimer);
+        earlyCanaryReplies.delete(requestId);
+        logCanaryComparison(requestId, event, early.rfProbs);
+        return;
+      }
+
+      const cleanupTimer = setTimeout(() => { pendingCanaryContext.delete(requestId); }, CANARY_CONTEXT_TIMEOUT_MS);
+      pendingCanaryContext.set(requestId, { event, cleanupTimer });
+    };
+
     if (mode === "block" && result.verdict === "block") {
       try { trackForLatePatch(store?.log(event)); } catch { /* non-fatal */ }
+      trackForCanary();
       res.status(403).json({ error: "Forbidden", class: result.predicted_class });
       return;
     }
 
     next();
     try { trackForLatePatch(store?.log(event)); } catch { /* non-fatal */ }
+    trackForCanary();
   };
+
+  // Graceful shutdown: terminates the worker pool this call spawned. Not
+  // needed by most consumers (workers are unref'd-equivalent from the
+  // process's perspective — they don't block normal exit), but real apps
+  // doing a clean SIGTERM shutdown, and tests that call logsguardian()
+  // directly and need to release the real worker_threads it spawns (rather
+  // than leaving them running until the process itself exits), need a way
+  // to reach them — nothing else exposes these closed-over references.
+  (logsguardianMiddleware as LogsguardianHandler).close = (): void => {
+    // Deliberately fire-and-forget, not awaited: onnxruntime-node's native
+    // addon has a known teardown race (the same "libc++abi ... Napi::Error"
+    // crash seen elsewhere in this project under --forceExit) that measurably
+    // triggers MORE often when terminate() is awaited (tested empirically —
+    // awaiting each worker's actual thread-exit confirmation, one at a time,
+    // gave the crash more chances to fire than just calling terminate() and
+    // moving on). Not fully understood why; not worth digging further into
+    // onnxruntime-node's native internals for a test-cleanup path.
+    rfWorker?.terminate();
+    for (const w of ifWorkers) w.terminate();
+    store?.close();
+    webhookStore?.close();
+    closeCanaryWorker();
+  };
+
+  (logsguardianMiddleware as LogsguardianHandler).spawnCanaryWorker = spawnCanaryWorker;
+  (logsguardianMiddleware as LogsguardianHandler).closeCanaryWorker = closeCanaryWorker;
+
+  return logsguardianMiddleware as LogsguardianHandler;
 }

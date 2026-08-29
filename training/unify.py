@@ -27,6 +27,17 @@ NEAR_DUP_REPORT = DATA_CLEAN / "near_duplicates_report.txt"
 
 EXCLUDED = {"unified.jsonl"}  # skip self if already exists
 
+# telemetry_curated_*.jsonl (packages/mlops's `mlops review-clusters`, Fase 4 of
+# the CT/CI/CD pipeline) is feature-space (FEATURE_NAMES columns + label +
+# _source + _row_hash), not raw-request canonical JSONL — collector telemetry
+# never carries raw request text (Fase 1 design: vector-only, for privacy), so
+# there is no path/query/body for this script's fingerprint()/dedup logic to
+# operate on. Loading it here would silently collapse all curated rows sharing
+# a label into one fingerprint (path/query/body all empty for every row). The
+# CT orchestrator (training/ct_pipeline.py) merges this file in after the
+# extractor CLI step instead, directly at the features.parquet level.
+EXCLUDED_PATTERNS = ("telemetry_curated_",)
+
 
 def levenshtein(a: str, b: str) -> int:
     """Compute Levenshtein distance between two strings (early-exit per completed row)."""
@@ -64,7 +75,7 @@ def load_all_records(data_clean: Path) -> list[tuple[str, dict]]:
     """Load all JSONL files, returning list of (source_name, record)."""
     result = []
     for path in sorted(data_clean.glob("*.jsonl")):
-        if path.name in EXCLUDED:
+        if path.name in EXCLUDED or path.name.startswith(EXCLUDED_PATTERNS):
             continue
         source = path.stem
         with open(path, encoding="utf-8") as f:

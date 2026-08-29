@@ -1,0 +1,42 @@
+{
+  "name": "@logsguardian/mlops",
+  "version": "0.1.0",
+  "description": "CT/CI/CD pipeline for logSguarDian: telemetry collection, curation, retraining, gates, and canary deploy",
+  "license": "MIT",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "bin": {
+    "mlops-collector": "dist/collector/bin.js",
+    "mlops": "dist/cli.js"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "test": "jest",
+    "collector": "ts-node src/collector/bin.ts",
+    "simulate-fleet": "ts-node src/simulate-fleet.ts",
+    "mlops": "ts-node src/cli.ts",
+    "canary-replay": "ts-node src/canary-replay.ts",
+    "canary-shadow": "ts-node src/canary-shadow.ts"
+  },
+  "dependencies": {
+    "@logsguardian/extractor": "workspace:*",
+    "better-sqlite3": "^11.0.0",
+    "express": "^4.19.0",
+    "logsguardian": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^7.6.9",
+    "@types/express": "^4.17.21",
+    "@types/jest": "^29.5.12",
+    "@types/node": "^20.14.0",
+    "@types/supertest": "^6.0.2",
+    "jest": "^29.7.0",
+    "supertest": "^7.0.0",
+    "ts-jest": "^29.1.2",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.5.0"
+  }
+}

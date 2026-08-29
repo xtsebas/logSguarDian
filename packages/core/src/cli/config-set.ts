@@ -1,7 +1,7 @@
 import * as fs from "fs";
 import { requireConfig, resolveConfigPath } from "./guard";
 
-type SupportedKey = "threshold" | "mode" | "model";
+type SupportedKey = "threshold" | "mode" | "model" | "telemetry";
 
 const VALIDATORS: Record<SupportedKey, (raw: string) => unknown> = {
   threshold: (raw) => {
@@ -30,6 +30,26 @@ const VALIDATORS: Record<SupportedKey, (raw: string) => unknown> = {
     }
     return raw;
   },
+  telemetry: (raw) => {
+    let parsed: URL;
+    try {
+      parsed = new URL(raw);
+    } catch {
+      throw new Error(`telemetry must be a valid URL, got '${raw}'`);
+    }
+    if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+      throw new Error(`telemetry URL must be http or https, got '${parsed.protocol.replace(":", "")}'`);
+    }
+    return raw;
+  },
+};
+
+/** CLI key -> MiddlewareOptions field, for the rare cases where they differ. */
+const CONFIG_FIELD: Record<SupportedKey, string> = {
+  threshold: "threshold",
+  mode: "mode",
+  model: "model",
+  telemetry: "telemetryUrl",
 };
 
 const SUPPORTED_KEYS = Object.keys(VALIDATORS) as SupportedKey[];
@@ -74,7 +94,8 @@ export function runConfigSet(args: string[]): void {
 
   // Load the current config, apply the change, rewrite.
   const current = requireConfig() as unknown as Record<string, unknown>;
-  const updated: Record<string, unknown> = { ...current, [key]: parsed };
+  const field = CONFIG_FIELD[key as SupportedKey];
+  const updated: Record<string, unknown> = { ...current, [field]: parsed };
 
   fs.writeFileSync(resolveConfigPath(), serializeConfig(updated), "utf-8");
   console.log(`Set ${key} = ${JSON.stringify(parsed)}`);

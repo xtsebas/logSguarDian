@@ -2,7 +2,11 @@ import path from "path";
 import express from "express";
 import { logsguardian } from "../packages/core/dist/index.js";
 
-const MODEL_DIR = path.resolve(__dirname, "..", "training", "models");
+// Overridable so the CT pipeline's Fase 6 E2E gate (training/gates/gate_e2e.py)
+// can point this at a temp directory holding a candidate model, without ever
+// touching training/models/ (production).
+const MODEL_DIR = process.env.LOGSGUARDIAN_E2E_MODEL_DIR
+  ?? path.resolve(__dirname, "..", "training", "models");
 
 export function createTestApp() {
   const app = express();
