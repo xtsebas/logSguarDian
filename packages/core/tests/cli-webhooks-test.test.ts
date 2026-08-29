@@ -31,7 +31,22 @@ function mockExit(): jest.SpyInstance {
   });
 }
 
-/** Real local HTTP server that always responds with the given status code. */
+/**
+ * Real local HTTP server that always responds with the given status code.
+ *
+ * Sends `Connection: close` and forcibly closes all sockets on teardown
+ * (closeServer) — without this, sendWebhook()'s client socket can be kept
+ * alive by Node's default HTTP agent (each test hits a distinct ephemeral
+ * port, so the pooled socket is never reused, just left open) past the end
+ * of the test that created it. That's exactly the kind of leaked handle
+ * Jest's "worker process failed to exit gracefully... Active timers can
+ * also cause this" warning describes, and it was the confirmed root cause
+ * of this file corrupting other tests' process.cwd() when run in the same
+ * suite: a handle from test N staying alive let test N's continuation (or
+ * Node's own socket teardown) run interleaved with test N+1's chdir'd
+ * region, since nothing here actually waits for full socket teardown
+ * before resolving.
+ */
 function startMockServer(statusCode: number): Promise<{ server: http.Server; url: string; getBody: () => string }> {
   return new Promise((resolve) => {
     let lastBody = "";
@@ -42,6 +57,7 @@ function startMockServer(statusCode: number): Promise<{ server: http.Server; url
       });
       req.on("end", () => {
         lastBody = data;
+        res.setHeader("Connection", "close");
         res.writeHead(statusCode);
         res.end();
       });
@@ -54,7 +70,10 @@ function startMockServer(statusCode: number): Promise<{ server: http.Server; url
 }
 
 function closeServer(server: http.Server): Promise<void> {
-  return new Promise((resolve) => server.close(() => resolve()));
+  return new Promise((resolve) => {
+    server.closeAllConnections();
+    server.close(() => resolve());
+  });
 }
 
 describe("webhooks test", () => {

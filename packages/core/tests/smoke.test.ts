@@ -31,15 +31,42 @@ function makeRes(): Response {
 }
 
 describe("logsguardian middleware — smoke tests", () => {
+  // Every logsguardian() call spawns real worker_threads (1 RF + 2 IF) — even
+  // with a short timeoutMs, since the middleware's timeout only governs how
+  // long IT waits, not whether the workers themselves spawn and start loading
+  // real ONNX models from the default modelDir (packages/core/models/,
+  // populated by the postbuild script). Left unterminated, these outlive the
+  // test and were confirmed (during the Fase 6/7 test-suite flakiness
+  // investigation) to be the dominant source of cross-file process.cwd()
+  // corruption in other chdir-based test files sharing this Jest worker
+  // process — closing every instance here fixes that at the source instead
+  // of chasing it file-by-file.
+  const instances: import("../src/types").LogsguardianHandler[] = [];
+  function trackedLogsguardian(...args: Parameters<typeof logsguardian>): ReturnType<typeof logsguardian> {
+    const mw = logsguardian(...args);
+    instances.push(mw);
+    return mw;
+  }
+  // afterAll rather than afterEach: fewer terminate() calls overall (the
+  // worker-thread crash race is triggered by terminate() itself, so calling
+  // it less often — once at file teardown instead of after every test —
+  // reduces exposure), and all that actually matters is that no worker from
+  // this file survives into the NEXT file Jest schedules onto this worker
+  // process.
+  afterAll(() => {
+    for (const mw of instances) mw.close?.();
+    instances.length = 0;
+  });
+
   test("factory returns a RequestHandler function", () => {
-    const mw = logsguardian({ mode: "monitor", dbPath: ":memory:" });
+    const mw = trackedLogsguardian({ mode: "monitor", dbPath: ":memory:" });
     expect(typeof mw).toBe("function");
     expect(mw.length).toBe(3);
   });
 
   test("fail-open: next() is called when worker is unavailable (short timeout)", async () => {
     // timeoutMs=2 ensures we exercise the fail-open path without waiting for real inference.
-    const mw = logsguardian({ mode: "block", timeoutMs: 2, dbPath: ":memory:" });
+    const mw = trackedLogsguardian({ mode: "block", timeoutMs: 2, dbPath: ":memory:" });
     const next = jest.fn() as unknown as NextFunction;
     const res = makeRes();
     await mw(makeReq(), res, next);
@@ -52,7 +79,7 @@ describe("logsguardian middleware — smoke tests", () => {
       path: "/products",
       query: { id: "1' OR '1'='1' UNION SELECT username,password FROM users--" } as unknown as Request["query"],
     });
-    const mw = logsguardian({ mode: "monitor", timeoutMs: 2, dbPath: ":memory:" });
+    const mw = trackedLogsguardian({ mode: "monitor", timeoutMs: 2, dbPath: ":memory:" });
     const next = jest.fn() as unknown as NextFunction;
     const res = makeRes();
     await mw(sqliReq, res, next);
@@ -75,7 +102,7 @@ describe("logsguardian middleware — smoke tests", () => {
       return;
     }
 
-    const mw = logsguardian({ mode: "block", timeoutMs: 5000, dbPath: ":memory:", modelDir });
+    const mw = trackedLogsguardian({ mode: "block", timeoutMs: 5000, dbPath: ":memory:", modelDir });
     // Give the worker time to load the models before sending real traffic.
     await new Promise((r) => setTimeout(r, 3000));
 

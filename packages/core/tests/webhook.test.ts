@@ -41,6 +41,12 @@ function startMockServer(): Promise<{ server: http.Server; url: string; getBody:
       req.on("data", (chunk) => { data += chunk; });
       req.on("end", () => {
         lastBody = data;
+        // Prevents the client socket from being kept alive past this test —
+        // an idle keep-alive socket to a port no other test will ever reuse
+        // is exactly the kind of leaked handle that corrupts other test
+        // files' process.cwd() when they share this Jest worker process
+        // (see smoke.test.ts's close() fix for the full mechanism).
+        res.setHeader("Connection", "close");
         res.writeHead(200);
         res.end();
       });
@@ -65,7 +71,10 @@ describe("sendWebhook — delivery", () => {
     ({ server, url, getBody } = await startMockServer());
   });
 
-  afterEach(() => new Promise<void>((resolve) => server.close(() => resolve())));
+  afterEach(() => new Promise<void>((resolve) => {
+    server.closeAllConnections();
+    server.close(() => resolve());
+  }));
 
   test("sends POST with JSON body to the webhook URL", (done) => {
     sendWebhook(url, BLOCK_EVENT);

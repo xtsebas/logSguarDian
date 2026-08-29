@@ -1,4 +1,15 @@
+import type { RequestHandler } from "express";
+
 export type AttackClass = "benign" | "cmdi" | "path_traversal" | "sqli" | "xss";
+
+/** The RequestHandler logsguardian() returns, plus an optional graceful-shutdown
+ * hook that terminates its worker pool (rf + if workers) and closes its SQLite
+ * stores — not needed for normal operation, but useful for a clean SIGTERM
+ * shutdown, and for tests that call logsguardian() directly and need to release
+ * the real worker_threads it spawns. */
+export interface LogsguardianHandler extends RequestHandler {
+  close?: () => void;
+}
 export type Verdict = "block" | "pass" | "pass_anomaly" | "timeout";
 export type Mode = "block" | "monitor";
 export type ModelSelection = "rf" | "if" | "hybrid";

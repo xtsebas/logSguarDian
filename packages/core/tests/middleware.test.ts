@@ -76,7 +76,14 @@ function tmpDb(): string {
   return p;
 }
 
+// Every makeApp() call opens its own real EventStore/WebhookStore SQLite
+// connection (Worker is mocked here, but the stores are not) — closed via
+// logsguardian()'s close() (Fase 6/7 addition) at file teardown, same
+// leaked-handle-corrupts-other-files' process.cwd() concern as smoke.test.ts.
+const middlewareInstances: import("../src/types").LogsguardianHandler[] = [];
+
 afterAll(() => {
+  for (const mw of middlewareInstances) mw.close?.();
   for (const p of tmpDbs) { try { fs.unlinkSync(p); } catch { /* already removed */ } }
 });
 
@@ -84,7 +91,9 @@ function makeApp(opts: Parameters<typeof logsguardian>[0] = {}): Application {
   // Reset the mock registry so this app's RF/IF worker construction is captured cleanly.
   mockWorkersByRole = { rf: null, if: [] };
   const app = express();
-  app.use(logsguardian({ dbPath: tmpDb(), ...opts }));
+  const mw = logsguardian({ dbPath: tmpDb(), ...opts });
+  middlewareInstances.push(mw);
+  app.use(mw);
   app.get("/", (_req, res) => res.json({ ok: true }));
   return app;
 }

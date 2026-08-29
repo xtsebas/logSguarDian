@@ -49,7 +49,7 @@
 import { Worker } from "worker_threads";
 import * as path from "path";
 import * as os from "os";
-import type { Request, Response, NextFunction, RequestHandler } from "express";
+import type { Request, Response, NextFunction } from "express";
 import { normalizeCanonicalRequest, extractFeatureVector } from "@logsguardian/extractor";
 import { EventStore } from "./store";
 import { WebhookStore } from "./webhook-store";
@@ -58,6 +58,7 @@ import { sendTelemetry } from "./telemetry";
 import type {
   AttackClass,
   DetectionEvent,
+  LogsguardianHandler,
   MiddlewareOptions,
   Verdict,
   WorkerRequest,
@@ -109,7 +110,7 @@ interface PendingEntry {
 
 let _requestId = 0;
 
-export function logsguardian(options: MiddlewareOptions = {}): RequestHandler {
+export function logsguardian(options: MiddlewareOptions = {}): LogsguardianHandler {
   const mode = options.mode ?? "block";
   const userThreshold = options.threshold;
   const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
@@ -337,7 +338,7 @@ export function logsguardian(options: MiddlewareOptions = {}): RequestHandler {
     });
   }
 
-  return async function logsguardianMiddleware(
+  const logsguardianMiddleware = async function logsguardianMiddleware(
     req: Request,
     res: Response,
     next: NextFunction
@@ -444,4 +445,28 @@ export function logsguardian(options: MiddlewareOptions = {}): RequestHandler {
     next();
     try { trackForLatePatch(store?.log(event)); } catch { /* non-fatal */ }
   };
+
+  // Graceful shutdown: terminates the worker pool this call spawned. Not
+  // needed by most consumers (workers are unref'd-equivalent from the
+  // process's perspective — they don't block normal exit), but real apps
+  // doing a clean SIGTERM shutdown, and tests that call logsguardian()
+  // directly and need to release the real worker_threads it spawns (rather
+  // than leaving them running until the process itself exits), need a way
+  // to reach them — nothing else exposes these closed-over references.
+  (logsguardianMiddleware as LogsguardianHandler).close = (): void => {
+    // Deliberately fire-and-forget, not awaited: onnxruntime-node's native
+    // addon has a known teardown race (the same "libc++abi ... Napi::Error"
+    // crash seen elsewhere in this project under --forceExit) that measurably
+    // triggers MORE often when terminate() is awaited (tested empirically —
+    // awaiting each worker's actual thread-exit confirmation, one at a time,
+    // gave the crash more chances to fire than just calling terminate() and
+    // moving on). Not fully understood why; not worth digging further into
+    // onnxruntime-node's native internals for a test-cleanup path.
+    rfWorker?.terminate();
+    for (const w of ifWorkers) w.terminate();
+    store?.close();
+    webhookStore?.close();
+  };
+
+  return logsguardianMiddleware as LogsguardianHandler;
 }

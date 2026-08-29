@@ -24,6 +24,10 @@ function startMockServer(): Promise<{ server: http.Server; url: string; getBody:
       req.on("data", (chunk) => { data += chunk; });
       req.on("end", () => {
         lastBody = data;
+        // See webhook.test.ts's identical fix — prevents a keep-alive client
+        // socket from outliving this test and corrupting other chdir-based
+        // test files sharing this Jest worker process.
+        res.setHeader("Connection", "close");
         res.writeHead(201);
         res.end();
       });
@@ -48,7 +52,10 @@ describe("sendTelemetry — delivery", () => {
     ({ server, url, getBody } = await startMockServer());
   });
 
-  afterEach(() => new Promise<void>((resolve) => server.close(() => resolve())));
+  afterEach(() => new Promise<void>((resolve) => {
+    server.closeAllConnections();
+    server.close(() => resolve());
+  }));
 
   test("sends POST with JSON body to the collector URL", (done) => {
     sendTelemetry(url, EVENT);
