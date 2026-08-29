@@ -54,6 +54,7 @@ jest.mock("worker_threads", () => {
     }
     postMessage(_msg: unknown): void { /* no-op → hop times out */ }
     terminate(): void {}
+    unref(): void {} // real Worker has this (middleware.ts calls it); EventEmitter doesn't
   }
   return {
     Worker: MockWorker,
@@ -320,14 +321,19 @@ describe("logsguardian — RF/IF pool partial-failure handling", () => {
     const dbPath = tmpDb();
     const app = makeApp({ mode: "block", threshold: 0.70, timeoutMs: 500, dbPath });
     mockRfResponse(BENIGN_HIGH);
-    mockIfResponseDelayed(IF_ANOMALY, 20); // arrives well after the response is sent
+    // 100ms (not 20ms): the "early" checkpoint below needs real margin past httpGet's
+    // own round-trip (server + HTTP + SQLite write) before IF's timer fires, or this
+    // becomes a real-clock race that fails under any environment slower than the
+    // machine it was written on — was previously observed to fail deterministically
+    // (not flaky) on a loaded/Windows dev environment with only a 5ms/20ms margin.
+    mockIfResponseDelayed(IF_ANOMALY, 100); // arrives well after the response is sent
 
     const { status } = await httpGet(app, "/");
     expect(status).toBe(200);
 
     // Immediately after the response: IF hasn't replied yet, so the row is logged
     // as a plain pass with no anomaly data — this is the log-patch design's tradeoff.
-    await new Promise((r) => setTimeout(r, 5));
+    await new Promise((r) => setTimeout(r, 30));
     const dbEarly = new Database(dbPath, { readonly: true });
     const earlyRow = dbEarly.prepare("SELECT verdict, if_score FROM detection_events WHERE id = 1").get() as
       | { verdict: string; if_score: number }
@@ -336,8 +342,8 @@ describe("logsguardian — RF/IF pool partial-failure handling", () => {
     expect(earlyRow?.verdict).toBe("pass");
     expect(earlyRow?.if_score).toBe(0);
 
-    // After IF's delayed reply (20ms) has had time to patch the row:
-    await new Promise((r) => setTimeout(r, 60));
+    // After IF's delayed reply (100ms) has had time to patch the row:
+    await new Promise((r) => setTimeout(r, 150));
     const db = new Database(dbPath, { readonly: true });
     const row = db.prepare("SELECT verdict, if_score, is_anomaly FROM detection_events WHERE id = 1").get() as
       | { verdict: string; if_score: number; is_anomaly: number }
@@ -663,6 +669,34 @@ describe("logsguardian — webhook", () => {
 
     expect(JSON.parse(staticBody).verdict).toBe("block");
     expect(JSON.parse(registeredBody).verdict).toBe("block");
+  });
+
+  test("fires to every registered webhook when several are added — none missed, none cross-delivered", async () => {
+    const N = 5;
+    const receivers = await Promise.all(Array.from({ length: N }, () => startReceiver()));
+    const dbPath = tmpDb();
+    const store = new WebhookStore(dbPath);
+    for (const r of receivers) store.add(r.url);
+    store.close();
+
+    const app = makeApp({ mode: "block", threshold: 0.70, timeoutMs: 500, dbPath }); // no static webhookUrl
+    mockResponse(SQLI_HIGH, IF_NORMAL);
+
+    await httpGet(app, "/?id=1 OR 1=1");
+    const bodies = await Promise.all(receivers.map((r) => r.waitForBody()));
+    await Promise.all(receivers.map((r) => new Promise<void>((res) => r.server.close(() => res()))));
+
+    // Every one of the N independent HTTP servers received its own POST —
+    // sendWebhook() is called once per registered row (middleware.ts's
+    // `for (const w of registeredWebhooks) sendWebhook(w.url, event)`), not
+    // just the first or a random subset.
+    expect(bodies).toHaveLength(N);
+    for (const raw of bodies) {
+      expect(raw).not.toBe(""); // waitForBody()'s 500ms fallback returns "" if nothing arrived
+      const parsed = JSON.parse(raw);
+      expect(parsed.verdict).toBe("block");
+      expect(parsed.predicted_class).toBe("sqli");
+    }
   });
 
   test("no webhookUrl and no registered webhooks: block verdict is still logged, nothing thrown, webhook_sent=false", async () => {

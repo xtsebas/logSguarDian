@@ -419,20 +419,32 @@ the raw sweep table above.
 
 ## 3. Decision Policy
 
-### 3.1 Decision Table
+> **Current values (post `ff0e1a1`, worker-pool + async log-patch design):** the
+> per-class `RF_THRESHOLDS` map described below as of §2.2.3/rf_v7 was found
+> unnecessary once `non_form_operator_count` landed (v8) and was **removed** —
+> a single global `RF_THRESHOLD = 0.35` has been in effect since. `IF_THRESHOLD`
+> has been recalibrated several more times since the `0.0445`/`0.00940951`
+> values below (if_v5/if_v6) — the value actually shipped today is
+> `0.002486040118540811` (if_v9, `middleware.ts`). The decision *shape*
+> (RF sole blocking authority, IF log-only) is unchanged; only the threshold
+> values and the RF-thresholds-are-per-class premise below are historical.
+> See `docs/api.md` for the current, code-accurate decision table, and §2.2/§2.3
+> above for the full recalibration history including these later rounds.
+
+### 3.1 Decision Table (historical — see note above for current values)
 
 ```
 GIVEN  request: CanonicalRequest
        rf_probs: float[5]        // predict_proba output, indexed by rf_classes
        if_score: float            // decision_function output
-       RF_THRESHOLDS = { sqli: 0.45, xss: 0.35, path_traversal: 0.35, cmdi: 0.35 }
-       IF_THRESHOLD = 0.0445
+       RF_THRESHOLDS = { sqli: 0.45, xss: 0.35, path_traversal: 0.35, cmdi: 0.35 }  // superseded, see note above
+       IF_THRESHOLD = 0.0445                                                        // superseded, see note above
 
 COMPUTE
   predicted_class  = rf_classes[argmax(rf_probs)]
   confidence       = max(rf_probs)
   is_attack        = predicted_class != 'benign'
-  threshold        = RF_THRESHOLDS[predicted_class]  // per class; see §2.2.3
+  threshold        = RF_THRESHOLDS[predicted_class]  // per class; see §2.2.3 — superseded by a single RF_THRESHOLD, see note above
   high_confidence  = confidence >= threshold
   is_anomaly       = if_score < IF_THRESHOLD
 
@@ -477,13 +489,21 @@ documented here as the authoritative design record.
 
 ## 4. Threshold Constants
 
+**Current, as shipped (`middleware.ts`):** `RF_THRESHOLD = 0.35` (single global
+constant, not per-class — the per-class map below was removed, see the note
+at the top of §3), `IF_THRESHOLD = 0.002486040118540811` (if_v9). The table
+below is the snapshot as of rf_v7/if_v5 and is kept for provenance of *how*
+each round of recalibration was reasoned about — it is not the current
+runtime value. §2.2/§2.3 has the complete round-by-round history through the
+current values.
+
 | Constant | Value | Source | Determined from |
 |----------|-------|--------|-----------------|
-| `RF_THRESHOLDS.sqli` | `0.45` | Section 2.2.3 — per-class thresholds (rf_v7, minimal-touch) | just above the `legit_post` confidence (0.4005) that motivated §2.2.2's residual FP |
-| `RF_THRESHOLDS.xss` | `0.35` | Section 2.2.3 | unchanged from legacy global default — no E2E benefit from raising |
-| `RF_THRESHOLDS.path_traversal` | `0.35` | Section 2.2.3 | unchanged from legacy global default — no E2E benefit from raising |
-| `RF_THRESHOLDS.cmdi` | `0.35` | Section 2.2.3 | unchanged from legacy global default — raising regressed E2E detection via cross-class spillover |
-| `IF_THRESHOLD` | `0.00940951` | `training/models/parity_report.json` → `threshold_if` | Val-set recalibration, §2.3.2 (if_v5, FP≤0.06 target after the if_v5 FP≤0.08 recalibration failed test) |
+| `RF_THRESHOLDS.sqli` (superseded) | `0.45` | Section 2.2.3 — per-class thresholds (rf_v7, minimal-touch) | just above the `legit_post` confidence (0.4005) that motivated §2.2.2's residual FP |
+| `RF_THRESHOLDS.xss` (superseded) | `0.35` | Section 2.2.3 | unchanged from legacy global default — no E2E benefit from raising |
+| `RF_THRESHOLDS.path_traversal` (superseded) | `0.35` | Section 2.2.3 | unchanged from legacy global default — no E2E benefit from raising |
+| `RF_THRESHOLDS.cmdi` (superseded) | `0.35` | Section 2.2.3 | unchanged from legacy global default — raising regressed E2E detection via cross-class spillover |
+| `IF_THRESHOLD` (superseded) | `0.00940951` | `training/models/parity_report.json` → `threshold_if` | Val-set recalibration, §2.3.2 (if_v5, FP≤0.06 target after the if_v5 FP≤0.08 recalibration failed test) |
 
 These values must match exactly in:
 - `packages/core/src/middleware.ts` (`RF_THRESHOLDS`, decision-policy layer)

@@ -1,7 +1,7 @@
 import * as fs from "fs";
 import * as path from "path";
 import Database from "better-sqlite3";
-import { requireConfig } from "./guard";
+import { requireConfig, parseFormat, dbPathMismatchHint } from "./guard";
 import type { MiddlewareOptions } from "../types";
 
 interface AttackTypeRow {
@@ -43,6 +43,7 @@ export function runEndpointsProfile(args: string[]): void {
 
   const route = args.find((a) => !a.startsWith("--"));
   if (!route) {
+    console.error("logsguardian: endpoints profile requires a route argument");
     console.error("Usage: logsguardian endpoints profile <route> [--method <METHOD>] [--format table|json]");
     process.exit(1);
   }
@@ -52,10 +53,7 @@ export function runEndpointsProfile(args: string[]): void {
     return idx !== -1 ? args[idx + 1].toUpperCase() : undefined;
   })();
 
-  const format = (() => {
-    const idx = args.indexOf("--format");
-    return idx !== -1 ? args[idx + 1] : "table";
-  })();
+  const format = parseFormat(args, ["table", "json"] as const, "table");
 
   const dbPath = path.resolve(process.cwd(), config.dbPath ?? "logsguardian.db");
 
@@ -133,14 +131,15 @@ export function runEndpointsProfile(args: string[]): void {
     return;
   }
 
-  printProfile(profile);
+  printProfile(profile, dbPath);
 }
 
-function printProfile(p: RouteProfile): void {
+function printProfile(p: RouteProfile, dbPath: string): void {
   console.log(`\nlogSguarDian — Route Profile: ${p.path}\n`);
 
   if (p.total_incidents === 0) {
     console.log("  No detection events found for this route.\n");
+    console.log(dbPathMismatchHint(dbPath));
     return;
   }
 

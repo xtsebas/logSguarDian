@@ -1,13 +1,16 @@
 {
   "name": "@logsguardian/extractor",
   "version": "0.1.0",
-  "description": "Extractor canonico de 72 features para deteccion de SQLi, XSS, Path Traversal y Command Injection en peticiones HTTP",
+  "description": "Extractor canonico de 73 features para deteccion de SQLi, XSS, Path Traversal y Command Injection en peticiones HTTP",
   "license": "MIT",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "bin": {
     "extractor": "dist/cli.js"
   },
+  "files": [
+    "dist"
+  ],
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "test": "jest",

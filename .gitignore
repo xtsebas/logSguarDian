@@ -72,3 +72,7 @@ training/models/.*.production_backup
 
 # Fase 6 gate reports (training/gates/run_all_gates.py) — one per run, regenerable
 training/results/gate_report_*.json
+# SQLite runtime artifacts (EventStore/WebhookStore dbPath default) — dev/test
+# output, not source. Accidentally committed once (see .claude/decisiones.md).
+*.db
+*.db-journal

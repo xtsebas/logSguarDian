@@ -2,7 +2,34 @@
   "name": "logsguardian",
   "version": "0.1.0",
   "description": "Middleware RASP de deteccion de amenazas (SQLi, XSS, Path Traversal, Command Injection) para Node.js/Express, con inferencia ONNX (Random Forest + Isolation Forest)",
+  "keywords": [
+    "rasp",
+    "security",
+    "middleware",
+    "express",
+    "waf",
+    "sqli",
+    "xss",
+    "path-traversal",
+    "command-injection",
+    "intrusion-detection",
+    "machine-learning",
+    "onnx"
+  ],
+  "homepage": "https://github.com/xtsebas/logSguarDian/tree/main/packages/core#readme",
+  "bugs": {
+    "url": "https://github.com/xtsebas/logSguarDian/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/xtsebas/logSguarDian.git",
+    "directory": "packages/core"
+  },
   "license": "MIT",
+  "contributors": [
+    { "name": "Sebastian Huertas" },
+    { "name": "Diego Valenzuela" }
+  ],
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "bin": {
@@ -11,7 +38,8 @@
   "files": [
     "dist",
     "models",
-    "data"
+    "data",
+    "scripts"
   ],
   "engines": {
     "node": ">=20"
@@ -19,13 +47,17 @@
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "postbuild": "cp ../../training/models/class_metrics.json data/ && cp ../../training/models/feature_importance.json data/ && cp ../../training/models/rf.onnx models/ && cp ../../training/models/if.onnx models/",
-    "test": "jest --selectProjects default ort-parity && jest --selectProjects cli-config-set-isolated --runInBand"
+    "postinstall": "node scripts/postinstall.js",
+    "test": "jest"
   },
   "dependencies": {
     "@logsguardian/extractor": "workspace:*",
     "better-sqlite3": "^11.0.0",
     "onnxruntime-node": "^1.19.0"
   },
+  "bundledDependencies": [
+    "@logsguardian/extractor"
+  ],
   "peerDependencies": {
     "express": "^4.18.0 || ^5.0.0"
   },
