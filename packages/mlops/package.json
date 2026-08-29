@@ -17,7 +17,9 @@
     "test": "jest",
     "collector": "ts-node src/collector/bin.ts",
     "simulate-fleet": "ts-node src/simulate-fleet.ts",
-    "mlops": "ts-node src/cli.ts"
+    "mlops": "ts-node src/cli.ts",
+    "canary-replay": "ts-node src/canary-replay.ts",
+    "canary-shadow": "ts-node src/canary-shadow.ts"
   },
   "dependencies": {
     "@logsguardian/extractor": "workspace:*",

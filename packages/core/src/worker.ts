@@ -82,10 +82,17 @@ if (IF_MODEL_INDICES.length !== 61) {
   throw new Error(`Expected 61 IF model feature indices, got ${IF_MODEL_INDICES.length}`);
 }
 
-const { role, modelDir } = workerData as { role: WorkerRole; modelDir: string };
+const { role, modelDir, modelFile: modelFileOverride } = workerData as {
+  role: WorkerRole;
+  modelDir: string;
+  /** Fase 7: explicit filename for a canary worker (e.g. "rf_candidate.onnx")
+   * — overrides the role-based default so the worker can load a candidate
+   * model without needing its own role/exclusion logic. */
+  modelFile?: string;
+};
 
 async function loadSession(): Promise<ort.InferenceSession> {
-  const modelFile = role === "rf" ? "rf.onnx" : "if.onnx";
+  const modelFile = modelFileOverride ?? (role === "rf" ? "rf.onnx" : "if.onnx");
   return ort.InferenceSession.create(path.join(modelDir, modelFile));
 }
 
@@ -130,7 +137,11 @@ parentPort!.on("message", async (msg: WorkerRequest) => {
     const vector73 = extractFeatureVector(msg.canonical);
     const tRunStart = DEBUG ? process.hrtime.bigint() : undefined;
 
-    if (role === "rf") {
+    if (role === "rf" || role === "canary") {
+      // Canary (Fase 7) is an RF-shaped candidate model — identical 67-feature
+      // input contract and output convention as production RF, just tagged
+      // with its own role so the middleware never confuses a shadow reply
+      // for a production one.
       const rfInput = Float32Array.from(RF_MODEL_INDICES.map((i) => vector73[i]));
       const rfTensor = new ort.Tensor("float32", rfInput, [1, 67]);
       const rfResult = await session.run({ float_input: rfTensor });
@@ -146,7 +157,9 @@ parentPort!.on("message", async (msg: WorkerRequest) => {
           since_session_ready_ms: sessionReadyAt ? Number(tEnd - sessionReadyAt) / 1e6 : undefined,
         }));
       }
-      const reply: WorkerResponse = { id: msg.id, role: "rf", rfProbs };
+      const reply: WorkerResponse = role === "rf"
+        ? { id: msg.id, role: "rf", rfProbs }
+        : { id: msg.id, role: "canary", rfProbs };
       parentPort!.postMessage(reply);
     } else {
       const ifInput = Float32Array.from(IF_MODEL_INDICES.map((i) => vector73[i]));

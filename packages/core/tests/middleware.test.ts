@@ -27,24 +27,26 @@ import { WebhookStore } from "../src/webhook-store";
 // ─── Worker mock ─────────────────────────────────────────────────────────────
 // Variable starts with "mock" so babel-jest allows it inside jest.mock factory.
 interface MockWorkerLike {
-  role: "rf" | "if";
+  role: "rf" | "if" | "canary";
   emit(event: string, ...args: unknown[]): boolean;
   postMessage(msg: unknown): void;
 }
 // eslint-disable-next-line prefer-const
-let mockWorkersByRole: { rf: MockWorkerLike | null; if: MockWorkerLike[] } = { rf: null, if: [] };
+let mockWorkersByRole: { rf: MockWorkerLike | null; if: MockWorkerLike[]; canary: MockWorkerLike | null } = { rf: null, if: [], canary: null };
 
 jest.mock("worker_threads", () => {
   const { EventEmitter } = require("events");
   class MockWorker extends EventEmitter {
-    role: "rf" | "if";
-    constructor(_scriptPath: unknown, opts: { workerData: { role: "rf" | "if" } }) {
+    role: "rf" | "if" | "canary";
+    constructor(_scriptPath: unknown, opts: { workerData: { role: "rf" | "if" | "canary" } }) {
       super();
       this.role = opts.workerData.role;
       if (this.role === "rf") {
         mockWorkersByRole.rf = this as unknown as MockWorkerLike;
-      } else {
+      } else if (this.role === "if") {
         mockWorkersByRole.if.push(this as unknown as MockWorkerLike);
+      } else {
+        mockWorkersByRole.canary = this as unknown as MockWorkerLike;
       }
       // Real workers signal readiness once their ONNX session loads; mocks have
       // no loading to do, so signal immediately (after listeners are attached).
@@ -88,14 +90,20 @@ afterAll(() => {
 });
 
 function makeApp(opts: Parameters<typeof logsguardian>[0] = {}): Application {
+  return makeAppWithHandler(opts).app;
+}
+
+/** Fase 7 tests need the LogsguardianHandler itself (spawnCanaryWorker lives
+ * there), not just the Express app makeApp() returns. */
+function makeAppWithHandler(opts: Parameters<typeof logsguardian>[0] = {}): { app: Application; mw: import("../src/types").LogsguardianHandler } {
   // Reset the mock registry so this app's RF/IF worker construction is captured cleanly.
-  mockWorkersByRole = { rf: null, if: [] };
+  mockWorkersByRole = { rf: null, if: [], canary: null };
   const app = express();
   const mw = logsguardian({ dbPath: tmpDb(), ...opts });
   middlewareInstances.push(mw);
   app.use(mw);
   app.get("/", (_req, res) => res.json({ ok: true }));
-  return app;
+  return { app, mw };
 }
 
 function httpGet(app: Application, url: string): Promise<{ status: number; body: unknown; elapsedMs: number }> {
@@ -154,6 +162,38 @@ function mockIfResponseDelayed(ifScore: number, delayMs: number): void {
 function mockResponse(rfProbs: number[], ifScore: number): void {
   mockRfResponse(rfProbs);
   mockIfResponse(ifScore);
+}
+
+/** Fase 7: delays RF's own reply — used to deterministically force the
+ * "canary arrives before trackForCanary() runs" race (canary's reply model
+ * is unaffected: whatever fires it, real or mocked, wins if RF is slower). */
+function mockRfResponseDelayed(rfProbs: number[], delayMs: number): void {
+  const rf = mockWorkersByRole.rf!;
+  rf.postMessage = (msg: unknown) => {
+    const { id } = msg as WorkerRequest;
+    setTimeout(() => rf.emit("message", { id, role: "rf", rfProbs } as WorkerResponse), delayMs);
+  };
+}
+
+/** Fase 7: wires the canary mock worker to reply immediately with the given
+ * RF-shaped probs (canary is RF-shaped — same rfProbs response). */
+function mockCanaryResponse(rfProbs: number[]): void {
+  const canary = mockWorkersByRole.canary!;
+  canary.postMessage = (msg: unknown) => {
+    const { id } = msg as WorkerRequest;
+    setImmediate(() => canary.emit("message", { id, role: "canary", rfProbs } as WorkerResponse));
+  };
+}
+
+/** Fase 7: wires the canary mock worker to reply after delayMs — used to
+ * deterministically force the "late" canary-reply path (pendingCanaryContext
+ * already registered by the time canary answers). */
+function mockCanaryResponseDelayed(rfProbs: number[], delayMs: number): void {
+  const canary = mockWorkersByRole.canary!;
+  canary.postMessage = (msg: unknown) => {
+    const { id } = msg as WorkerRequest;
+    setTimeout(() => canary.emit("message", { id, role: "canary", rfProbs } as WorkerResponse), delayMs);
+  };
 }
 
 // ─── Probe vectors ────────────────────────────────────────────────────────────
@@ -369,6 +409,86 @@ describe("logsguardian — RF/IF pool partial-failure handling", () => {
     // Both mock workers default to no-op — neither hop responds.
     const { status } = await httpGet(app, "/?id=1 OR 1=1");
     expect(status).toBe(200);
+  });
+});
+
+describe("logsguardian — canary shadow evaluation (Fase 7)", () => {
+  test("does not spawn a canary worker by default — on-demand only", async () => {
+    const app = makeApp({ mode: "block", threshold: 0.70, timeoutMs: 500 });
+    mockResponse(SQLI_HIGH, IF_NORMAL);
+    await httpGet(app, "/");
+    expect(mockWorkersByRole.canary).toBeNull();
+  });
+
+  test("a late canary reply (arrives after pendingCanaryContext is registered) logs a comparison", async () => {
+    const dbPath = tmpDb();
+    const { app, mw } = makeAppWithHandler({ mode: "block", threshold: 0.70, timeoutMs: 500, dbPath });
+    await mw.spawnCanaryWorker!("/fake/models/rf_candidate.onnx");
+
+    mockRfResponse(SQLI_HIGH); // production: blocks, sqli
+    mockCanaryResponseDelayed(BENIGN_HIGH, 20); // canary: would have passed, benign — arrives well after the response
+
+    const { status } = await httpGet(app, "/");
+    expect(status).toBe(403); // production's verdict alone decides the response
+
+    await new Promise((r) => setTimeout(r, 60)); // let the delayed canary reply land
+    const db = new Database(dbPath, { readonly: true });
+    const row = db.prepare("SELECT * FROM canary_comparisons ORDER BY id DESC LIMIT 1").get() as
+      | { production_verdict: string; canary_verdict: string; verdict_match: number; class_match: number }
+      | undefined;
+    db.close();
+
+    expect(row).toBeDefined();
+    expect(row?.production_verdict).toBe("block");
+    expect(row?.canary_verdict).toBe("pass");
+    expect(row?.verdict_match).toBe(0); // block vs pass — a real disagreement
+    expect(row?.class_match).toBe(0);
+  });
+
+  test("an early canary reply (arrives before pendingCanaryContext is registered) still logs a comparison", async () => {
+    // Forces the exact race found during Fase 7's own verification (canary-
+    // replay.ts's first real run): canary is dispatched at the same instant
+    // as RF, but trackForCanary() doesn't run until well after RF's own
+    // reply resolves the response — so delaying RF here, while canary
+    // replies immediately, guarantees canary answers first.
+    const dbPath = tmpDb();
+    const { app, mw } = makeAppWithHandler({ mode: "block", threshold: 0.70, timeoutMs: 500, dbPath });
+    await mw.spawnCanaryWorker!("/fake/models/rf_candidate.onnx");
+
+    mockRfResponseDelayed(SQLI_HIGH, 30); // production reply deliberately slow
+    mockCanaryResponse(SQLI_HIGH); // canary agrees, but replies almost immediately — before RF
+
+    const { status } = await httpGet(app, "/");
+    expect(status).toBe(403);
+
+    const db = new Database(dbPath, { readonly: true });
+    const row = db.prepare("SELECT * FROM canary_comparisons ORDER BY id DESC LIMIT 1").get() as
+      | { production_verdict: string; canary_verdict: string; verdict_match: number; class_match: number }
+      | undefined;
+    db.close();
+
+    expect(row).toBeDefined();
+    expect(row?.production_verdict).toBe("block");
+    expect(row?.canary_verdict).toBe("block");
+    expect(row?.verdict_match).toBe(1);
+    expect(row?.class_match).toBe(1);
+  });
+
+  test("closeCanaryWorker() stops further dispatch — no comparison for requests sent after", async () => {
+    const dbPath = tmpDb();
+    const { app, mw } = makeAppWithHandler({ mode: "block", threshold: 0.70, timeoutMs: 500, dbPath });
+    await mw.spawnCanaryWorker!("/fake/models/rf_candidate.onnx");
+    mockRfResponse(SQLI_HIGH);
+    mockCanaryResponse(SQLI_HIGH);
+
+    mw.closeCanaryWorker!();
+    await httpGet(app, "/");
+    await new Promise((r) => setTimeout(r, 20));
+
+    const db = new Database(dbPath, { readonly: true });
+    const row = db.prepare("SELECT COUNT(*) as c FROM canary_comparisons").get() as { c: number };
+    db.close();
+    expect(row.c).toBe(0);
   });
 });
 
