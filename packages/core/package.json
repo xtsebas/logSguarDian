@@ -19,7 +19,7 @@
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "postbuild": "cp ../../training/models/class_metrics.json data/ && cp ../../training/models/feature_importance.json data/ && cp ../../training/models/rf.onnx models/ && cp ../../training/models/if.onnx models/",
-    "test": "jest"
+    "test": "jest --selectProjects default ort-parity && jest --selectProjects cli-config-set-isolated --runInBand"
   },
   "dependencies": {
     "@logsguardian/extractor": "workspace:*",
