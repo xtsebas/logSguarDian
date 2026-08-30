@@ -457,6 +457,68 @@ context loses a confidence contribution the model implicitly relies on,
 even when the injection signal itself (`semicolon_count`,
 `shell_command_count`) is present and correctly extracted.
 
+### 8.1 Windows-syntax and compound-command coverage (v11) — BOTH RESOLVED, two different mechanisms
+
+A follow-up investigation checked whether the same corpus had comparable
+gaps for (a) Windows-style cmdi syntax (`powershell`, `certutil`, `net
+user`, etc.) and (b) compound commands chaining 2+ operations. Both were
+confirmed real and scoped precisely before any fix:
+
+- Windows-shaped payloads were 0.17% of the cmdi corpus (15/8,858 rows).
+  `SHELL_COMMAND_COUNT` already recognized `powershell`/`cmd.exe` but
+  nothing else Windows-specific — a genuine feature-vocabulary gap, not
+  just a data-volume one.
+- Compound payloads (2+ chained operations) were 2.9% of the cmdi corpus.
+  Unlike §8 above, **richer request context did not help**: live inference
+  with a real browser UA and cookie still misclassified 3/4 hand-built
+  compound payloads as `path_traversal`, because path-indicator features
+  (`traversal_sequence_count`, `path_separator_count`) outweighed
+  shell-command signal whenever a chain touched `/etc/passwd`-style paths.
+  This confirmed a genuinely different mechanism from §8's context-richness
+  effect — data alone (verified via an ephemeral no-new-feature experiment)
+  wasn't a clean fix either, so this needed new features, not just more
+  examples.
+
+**Fix (v11 retrain):**
+1. `SHELL_COMMAND_COUNT` extended with `certutil`, `wmic`, `reg
+   add/query/delete`, `net user/localgroup`, `schtasks`, `rundll32`,
+   `mshta`, `bitsadmin`, `Invoke-*`, `-enc`/`-EncodedCommand` (0%
+   false-positive rate verified against 99k benign corpus rows).
+2. Two new additive features — `distinct_shell_command_count` (unique
+   recognized binaries, not raw match count) and `shell_to_path_ratio`
+   (distinct commands ÷ path-token count) — give the RF a direct signal
+   that survives even when a chain touches sensitive paths. Feature vector
+   grew 73 → 75 dimensions.
+3. 400 synthetic Windows-cmdi rows + 500 synthetic compound-command rows
+   added to the training corpus (nonce-deduplicated, held-out command
+   tokens reserved for generalization testing — see below).
+
+**Result (production hyperparameters, not a mini-pipeline approximation):**
+cmdi went from being missed entirely on Windows/compound payloads to
+precision 0.927 / recall 0.950 / F1 0.938 on the held-out **test** set (R2),
+with `path_traversal` unchanged at 0.982/0.983 — no regression from the new
+ratio feature. All 5 §8 minimal-context payloads (`whoami`, `id`, `uname
+-a`, `printenv`, `` `last` ``) still classify `cmdi` at 1.0 confidence, so
+this fix does not reopen §8.
+
+Generalization was checked on tokens never used during training or present
+in `SHELL_COMMAND_COUNT`'s vocabulary: Windows (`sc create`, `wevtutil cl`,
+`vssadmin delete shadows`) and compound-chain commands (`uname`,
+`hostname`, `tar`, `scp`, `crontab`, `useradd`, `ssh-keygen`, `base64`,
+`openssl`, recombined into chains not seen in training) — all classified
+`cmdi` at 0.57–0.83 confidence, clear of the 0.35 threshold. This is
+structural generalization via separator/subshell/redirect signal, not
+memorization of specific binaries.
+
+**One related bug found but not fixed here (out of scope for this
+change):** `SHELL_COMMAND_COUNT`'s `\b` word-boundary anchor cannot match
+immediately before `/etc/passwd` or `/bin/` when either is preceded by
+whitespace (both sides of the boundary are non-word characters in that
+case) — so those two path-literal alternatives are effectively dead code
+in realistic payloads like `cat /etc/passwd` (space before `/`). Worth a
+follow-up ticket; doesn't affect this fix's validity since the recognized
+binary names (`cat`, `rm`, `curl`, etc.) still match normally.
+
 ## 9. IF (IsolationForest) verdict inclusion under concurrency — RESOLVED (grace window superseded by async log-patch)
 
 **Status: fixed at the architecture level** (`docs/results.md` §A24 has the

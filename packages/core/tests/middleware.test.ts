@@ -11,7 +11,7 @@
  * patches the already-logged DetectionEvent row asynchronously instead.
  *
  * RF_CLASSES order: ["benign", "cmdi", "path_traversal", "sqli", "xss"]
- * IF_THRESHOLD = 0.002486040118540811  (below → anomaly)
+ * IF_THRESHOLD = 0.00806713286301003  (below → anomaly, if_v10)
  */
 import * as http from "http";
 import * as net from "net";

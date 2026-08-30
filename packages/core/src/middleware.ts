@@ -68,7 +68,12 @@ import type {
 } from "./types";
 
 const RF_THRESHOLD = 0.35;
-const IF_THRESHOLD = 0.002486040118540811;
+// if_v10 (v11 retrain, 63-feature IF slice): recalibrated by
+// 04_isolation_forest.ipynb's recall>=0.50 AND FP<=0.06 gate. Was
+// 0.002486040118540811 for if_v9 — update this alongside every IF retrain
+// (training/models/if_v10_metadata.json / parity_report.json carry the
+// current value; this constant must be kept in sync by hand).
+const IF_THRESHOLD = 0.00806713286301003;
 const RF_CLASSES: AttackClass[] = ["benign", "cmdi", "path_traversal", "sqli", "xss"];
 
 const DEFAULT_TIMEOUT_MS = 50;

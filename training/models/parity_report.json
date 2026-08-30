@@ -1,14 +1,14 @@
 {
-  "rf_onnx_path": "training/models/rf.onnx",
-  "if_onnx_path": "training/models/if.onnx",
+  "rf_onnx_path": "../../training/models/rf.onnx",
+  "if_onnx_path": "../../training/models/if.onnx",
   "target_opset": 17,
-  "rf_n_features": 67,
-  "if_n_features": 61,
+  "rf_n_features": 69,
+  "if_n_features": 63,
   "parity_samples": 1000,
-  "rf_max_prob_diff": 9.931948541375135e-08,
-  "if_max_score_diff": 2.034098424141817e-07,
+  "rf_max_prob_diff": 9.465478112424819e-08,
+  "if_max_score_diff": 2.4040887669496414e-07,
   "parity_passed": true,
-  "threshold_if": 0.002486040118540811,
+  "threshold_if": 0.00806713286301003,
   "if_onnx_output_index": 1,
   "rf_onnx_output_index": 1,
   "rf_classes": [
@@ -18,6 +18,6 @@
     "sqli",
     "xss"
   ],
-  "rf_model_version": "rf_v10",
-  "if_model_version": "if_v9"
+  "rf_model_version": "rf_v11",
+  "if_model_version": "if_v10"
 }
