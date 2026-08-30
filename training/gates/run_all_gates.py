@@ -116,7 +116,7 @@ def run_all_gates(candidate_dir: Path) -> bool:
         log(f"Report: {report_path}")
         return False
 
-    log("Running gate 4/4: memory")
+    log("Running gate 4/4: memory (real worker-pool RSS, not an approximation — see gate_memory.py's doc comment)")
     memory_result = check_memory(rf_onnx, if_onnx)
     results.append(memory_result)
     if not memory_result["passed"]:
@@ -125,6 +125,7 @@ def run_all_gates(candidate_dir: Path) -> bool:
         report_path = write_gate_report(results, status="REJECTED")
         log(f"Report: {report_path}")
         return False
+    log(f"  {memory_result['details']['methodology']}: {memory_result['details']['total_rss_mb']}MB (margin {memory_result['details']['margin_mb']}MB)")
 
     report_path = write_gate_report(results, status="APPROVED_FOR_CANARY")
     log(f"ALL GATES PASSED — APPROVED_FOR_CANARY. Report: {report_path}")

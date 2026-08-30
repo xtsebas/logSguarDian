@@ -21,7 +21,10 @@ const path = require("path");
 const { Worker } = require("worker_threads");
 
 const WORKER_PATH = path.join(__dirname, "../packages/core/dist/worker.js");
-const MODEL_DIR = path.join(__dirname, "../training/models");
+// Overridable so the CT pipeline's Fase 6 memory gate (training/gates/gate_memory.py)
+// can point this at a candidate model dir instead of production — same convention
+// as onnx-memory.bench.js's LOGSGUARDIAN_BENCH_MODEL_DIR.
+const MODEL_DIR = process.env.LOGSGUARDIAN_BENCH_MODEL_DIR || path.join(__dirname, "../training/models");
 const IF_POOL_SIZE = 2; // must match middleware.ts's IF_POOL_SIZE
 
 function gc() {

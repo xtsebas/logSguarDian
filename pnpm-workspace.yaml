@@ -1,5 +1,8 @@
 packages:
   - "packages/*"
+allowBuilds:
+  better-sqlite3: true
+  onnxruntime-node: true
 # hoisted (not the pnpm default "isolated"): required for packages/core's
 # bundledDependencies (@logsguardian/extractor is never published to npm on
 # its own — see packages/core/package.json — so it must ship physically
