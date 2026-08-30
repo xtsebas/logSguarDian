@@ -626,3 +626,48 @@ matching production reality, or (b) removing IF's dependency on
 features that carry this tension (UA-related features) entirely,
 forcing it to calibrate on axes that attacks and benign traffic
 genuinely don't share.
+
+### Update: option (b) tested and rejected
+
+Removing IF's access to UA-related features entirely
+(ua_present, ua_length, ua_suspicious — the full Group 8 UA
+set, 1.90% of IF's total split frequency) was tested as an
+alternative to the data-augmentation attempts above. Same
+retrain recipe as if_v10 (contamination=0.05, n_estimators=200,
+max_samples=4096), UA features dropped from the 63-feature
+input entirely.
+
+**Result: worse than either data-augmentation attempt, not a
+different tradeoff.**
+
+| Config | Recall (agg) | FP | cmdi | path_traversal | sqli | xss |
+|--------|-------------:|----:|-----:|----------------:|-----:|----:|
+| Current (with UA) | 0.9157 | 0.0595 | 0.9624 | 0.9980 | 0.8989 | 0.9819 |
+| UA features removed | 0.4946 | 0.0591 | 0.7505 | 0.7857 | 0.4315 | 0.7269 |
+
+Aggregate recall dropped 42.1pp — sqli hit hardest at -45.7pp.
+This far exceeds the -11.7pp ceiling that ruled out the
+synthetic-data approach. UA features carry real, non-redundant
+discriminative signal for sqli/xss/path_traversal specifically
+(not just a proxy for "looks like a browser") — despite their
+small (1.90%) aggregate split share, the splits they do provide
+are decisive at specific boundaries the other 60+ features
+don't cover.
+
+The single benign-request ablation case trivially "passes"
+with UA removed (IF literally cannot see the signal that
+caused the false anomaly) — but this is true by construction,
+not by improved calibration, and it comes at a recall cost an
+order of magnitude larger than the rejected data-augmentation
+attempts.
+
+**Conclusion: both proposed future-work directions from the
+original §10 investigation have now been tested and rejected.**
+The tension is more fundamental than either "add more realistic
+benign data" or "remove the feature causing the tension" can
+resolve — UA-related signal is genuinely load-bearing for IF's
+attack-class recall, not merely a spurious correlation that can
+be cleanly excised. The current calibration (accept the live
+pass_anomaly inflation as IF is non-blocking, log-enrichment
+only) remains the correct decision, now with both alternatives
+empirically closed rather than left as open future work.
