@@ -4,7 +4,7 @@
  * Exposes POST /telemetry, accepting the feature vectors that logsguardian's
  * middleware sends fire-and-forget (see packages/core/src/telemetry.ts) when
  * `telemetryUrl` is configured. Never receives raw request payloads — only
- * the 73-feature vector plus predicted_class/confidence/timestamp/source_id.
+ * the 75-feature vector plus predicted_class/confidence/timestamp/source_id.
  */
 import express, { type Express } from "express";
 import { validateTelemetryPayload } from "./schema";

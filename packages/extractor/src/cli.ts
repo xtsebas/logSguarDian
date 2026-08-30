@@ -2,7 +2,7 @@
 /**
  * CLI de extraccion batch: lee un archivo JSONL donde cada linea es un
  * CanonicalRequest (parcial) con metadatos de dataset (sample_id, label,
- * timestamp), y escribe un CSV con esas 3 columnas + las 73 features
+ * timestamp), y escribe un CSV con esas 3 columnas + las 75 features
  * canonicas, en el orden de FEATURE_NAMES.
  *
  * Uso:

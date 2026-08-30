@@ -1,6 +1,6 @@
 /**
  * Grupo 1 (longitudes/estructura URI) y Grupo 8 (HTTP request) del vector
- * de 73 features. Portado desde extract_features() en
+ * de 75 features. Portado desde extract_features() en
  * data_manager/02_feature_engineering.ipynb (celda cd_04).
  */
 import { CanonicalRequest, STANDARD_HEADERS } from "./types";

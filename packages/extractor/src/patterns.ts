@@ -49,7 +49,7 @@ export const SUSPICIOUS_EXTENSION_COUNT = /\.(php\d?|aspx?|jspx?)\b/gi;
 
 // ---- Grupo 7: Command Injection -------------------------------------------
 export const SHELL_COMMAND_COUNT =
-  /\b(cat\b|ls\b|dir\b|id\b|whoami|wget\b|curl\b|bash\b|sh\b|chmod|chown|rm\b|cp\b|mv\b|ping\b|nc\b|ncat\b|netcat|python|perl|ruby|php\b|powershell|cmd\.exe|\/bin\/|\/etc\/passwd|\/etc\/shadow)/gi;
+  /\b(cat\b|ls\b|dir\b|id\b|whoami|wget\b|curl\b|bash\b|sh\b|chmod|chown|rm\b|cp\b|mv\b|ping\b|nc\b|ncat\b|netcat|python|perl|ruby|php\b|powershell|cmd\.exe|\/bin\/|\/etc\/passwd|\/etc\/shadow|certutil\b|wmic\b|reg\s+(add|query|delete)|net\s+(user|localgroup)|schtasks\b|rundll32\b|mshta\b|bitsadmin\b|Invoke-\w+|-enc\b|-EncodedCommand\b)/gi;
 
 export const COMMAND_SEPARATOR_COUNT = /(&&|\|\||[|;`])/g;
 export const REDIRECT_OPERATOR_COUNT = /(>>|<<|[><])/g;

@@ -45,15 +45,15 @@ const legitimate: Partial<CanonicalRequest> = {
 };
 
 describe("FEATURE_NAMES", () => {
-  it("tiene exactamente 73 columnas en el orden canonico", () => {
-    expect(FEATURE_NAMES).toHaveLength(73);
+  it("tiene exactamente 75 columnas en el orden canonico", () => {
+    expect(FEATURE_NAMES).toHaveLength(75);
     expect(FEATURE_NAMES[0]).toBe("payload_length");
     expect(FEATURE_NAMES[FEATURE_NAMES.length - 1]).toBe("endpoint_diversity_60s");
   });
 });
 
 describe("extractFeatures - forma del resultado", () => {
-  it("devuelve exactamente las 73 claves de FEATURE_NAMES, todas numericas", () => {
+  it("devuelve exactamente las 75 claves de FEATURE_NAMES, todas numericas", () => {
     const features = extractFeatures(legitimate);
     expect(Object.keys(features)).toEqual([...FEATURE_NAMES]);
     for (const name of FEATURE_NAMES) {
