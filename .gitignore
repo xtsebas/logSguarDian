@@ -1,5 +1,11 @@
 # data
-data/
+/data/
+
+# packages/core bundles class_metrics.json + feature_importance.json from
+# training/models/ at build time (postbuild script) — ship them in the package
+!packages/core/data/
+!packages/core/data/class_metrics.json
+!packages/core/data/feature_importance.json
 
 # Claude
 .claude/
@@ -39,9 +45,34 @@ training/data_clean/*.parquet
 training/data_clean/near_duplicates_report.txt
 training/splits/*.parquet
 
-# Sklearn model binaries (use ONNX exports instead)
+# Sklearn model binaries — RF pkls are large (rf_v2.pkl = 18MB); use ONNX for inference
 training/models/*.pkl
+# IF pkls are small (~1MB) and needed for local reproducibility without re-running F3.5
+!training/models/if_v*.pkl
+
+# RF metadata JSON (Fase 6 gate input, training/gates/gate_metrics.py) — regenerated
+# alongside the gitignored RF pkl on every run, same treatment. IF's metadata JSON
+# stays tracked (if_v*_metadata.json), matching the IF pkl exception above.
+training/models/rf_v*_metadata.json
 
 # packages/core bundles ONNX models from training/models/ at build/publish time;
 # avoid duplicating the binaries in git (training/models/ is the source of truth)
 packages/core/models/*.onnx
+*.tgz
+
+# MLOps: generated SQLite telemetry / SQLite databases (regenerate via simulate-fleet)
+*.db
+packages/mlops/data/
+
+# MLOps CT pipeline: candidate models and production backups (training/ct_pipeline.py) —
+# regenerable, never committed; only a promoted (Fase 8) rf.onnx/if.onnx is tracked
+training/models/*_candidate*.onnx
+training/models/*_candidate_metadata.json
+training/models/.*.production_backup
+
+# Fase 6 gate reports (training/gates/run_all_gates.py) — one per run, regenerable
+training/results/gate_report_*.json
+# SQLite runtime artifacts (EventStore/WebhookStore dbPath default) — dev/test
+# output, not source. Accidentally committed once (see .claude/decisiones.md).
+*.db
+*.db-journal

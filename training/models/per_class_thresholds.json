@@ -1,0 +1,6 @@
+{
+  "sqli": 0.45,
+  "xss": 0.35,
+  "path_traversal": 0.35,
+  "cmdi": 0.35
+}

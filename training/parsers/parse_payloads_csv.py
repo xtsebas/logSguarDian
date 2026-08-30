@@ -10,13 +10,15 @@ Encoding: latin-1
 import csv
 import json
 import re
+import yaml
 from pathlib import Path
 
 ROOT = Path(__file__).parent.parent.parent
 INPUT = ROOT / "data" / "Payloads.csv"
 OUTPUT = ROOT / "training" / "data_clean" / "payloads_csv.jsonl"
 
-LABEL_MAP = {"Benign": "benign", "Malicious": "xss"}
+with open(ROOT / "training" / "label_map.yaml") as _f:
+    LABEL_MAP: dict[str, str] = yaml.safe_load(_f)["mappings"]["payloads_csv"]
 
 
 def parse_url(raw: str) -> tuple[str, str, str]:

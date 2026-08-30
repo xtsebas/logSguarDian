@@ -54,14 +54,16 @@ def run_notebook(nb_path: Path) -> bool:
     return True
 
 
-def main() -> None:
+def main() -> int:
     results = {}
+    all_ok = True
     for nb_name in NOTEBOOKS:
         nb_path = NB_DIR / nb_name
         ok = run_notebook(nb_path)
         results[nb_name] = "PASS" if ok else "FAIL"
         if not ok:
             print(f"\nABORTED: {nb_name} failed. Fix before proceeding.")
+            all_ok = False
             break
 
     print(f"\n{'='*70}")
@@ -70,6 +72,9 @@ def main() -> None:
     for name, status in results.items():
         print(f"  {'✓' if status == 'PASS' else '✗'} {name}: {status}")
 
+    if not all_ok:
+        return 1
+
     try:
         import onnxruntime  # noqa: F401
         import skl2onnx     # noqa: F401
@@ -77,7 +82,8 @@ def main() -> None:
     except ImportError:
         print("\nSkipped 05_onnx_export.ipynb: onnxruntime / skl2onnx not installed.")
         print("  pip install onnxruntime skl2onnx")
+    return 0
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())

@@ -1,1 +1,2 @@
-// Punto de entrada publico del paquete: exporta la factory del middleware (./middleware) y los tipos publicos (./types).
+export { logsguardian } from "./middleware";
+export type { MiddlewareOptions, DetectionEvent, LogsguardianHandler, CanaryComparison, Verdict, Mode, AttackClass } from "./types";

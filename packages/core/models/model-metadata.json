@@ -1,26 +1,27 @@
 {
   "rf": {
     "path": "rf.onnx",
-    "n_features": 66,
+    "n_features": 67,
     "target_opset": 17,
     "onnx_output_index": 1,
     "classes": ["benign", "cmdi", "path_traversal", "sqli", "xss"]
   },
   "if": {
     "path": "if.onnx",
-    "n_features": 66,
+    "n_features": 61,
     "target_opset": 17,
     "onnx_output_index": 1,
-    "threshold": 0.04428754289910031,
+    "threshold": 0.002486040118540811,
     "contamination": 0.05,
+    "max_samples": 4096,
     "trained_on": "benign_only",
-    "val_recall": 0.6653859921250448,
-    "val_fp_rate": 0.09904666888371577
+    "val_recall": 0.9154,
+    "val_fp_rate": 0.0574
   },
   "parity": {
     "parity_passed": true,
     "parity_samples": 1000,
-    "rf_max_prob_diff": 1.573562622425584e-07,
-    "if_max_score_diff": 1.8900293241586041e-07
+    "rf_max_prob_diff": 9.931948541375135e-08,
+    "if_max_score_diff": 2.034098424141817e-07
   }
 }

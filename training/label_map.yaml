@@ -1,0 +1,146 @@
+# training/label_map.yaml
+# Canonical label taxonomy — single source of truth per PLAN.md 2.3.
+# Maps each dataset's raw label strings/columns to the 5 canonical classes.
+
+canonical_classes:
+  - sqli
+  - xss
+  - path_traversal
+  - cmdi
+  - benign
+
+mappings:
+
+  # data_capec_multilabel.csv (SR-BH 2020, Harvard Dataverse 10.7910/DVN/OGOIXX)
+  # Priority-ordered: first matching CAPEC column wins.
+  # Rows where no listed column is "1" are discarded — capec source has no benign rows.
+  capec:
+    priority:
+      - label: sqli
+        columns:
+          - "66 - SQL Injection"
+      - label: path_traversal
+        columns:
+          - "126 - Path Traversal"
+      - label: cmdi
+        columns:
+          - "88 - OS Command Injection"
+          - "248 - Command Injection"
+      - label: xss
+        columns:
+          - "242 - Code Injection"
+
+  # data/modsec-learn/ (Scano et al., 2024 — github.com/pralab/modsec-learn-dataset)
+  # File-stem → canonical label; the entire file is one uniform label.
+  # malicious_dataset assigned sqli: UNION SELECT patterns confirmed by inspection.
+  modsec_learn:
+    legitimate_dataset: benign
+    malicious_dataset: sqli
+
+  # data/owasp/ (Lucz & Forstner, 2025 — Zenodo 10.5281/zenodo.17178461)
+  # Priority-ordered patterns matched case-insensitively against ModSecurity H-section text.
+  # Each entry's patterns are OR'd together into one regex.
+  # Rows matching only policy/bot/scanner rules (no WEB_ATTACK/attack-* tag) → skipped.
+  # Rows with no Message: line in H section → benign (un-flagged requests).
+  owasp_logs:
+    priority:
+      - label: sqli
+        patterns:
+          - "attack-sqli"
+          - "WEB_ATTACK/SQL_INJECTION"
+      - label: path_traversal
+        patterns:
+          - "attack-lfi"
+          - "WEB_ATTACK/DIR_TRAVERSAL"
+          - "WEB_ATTACK/FILE_INJECTION"
+          - "WEB_ATTACK/RFI"
+      - label: cmdi
+        patterns:
+          - "attack-rce"
+          - "WEB_ATTACK/COMMAND_INJECTION"
+          - "WEB_ATTACK/PHP_INJECTION"
+          - "WEB_ATTACK/RCE"
+          - "language-shell"
+          - "attack-injection-php"
+      - label: xss
+        patterns:
+          - "attack-xss"
+          - "WEB_ATTACK/XSS"
+
+  # data/payload_full.csv (Kaggle — cyberprince)
+  # Raw attack_type column values → canonical label.
+  payload_full:
+    norm: benign
+    sqli: sqli
+    xss: xss
+    path-traversal: path_traversal
+    cmdi: cmdi
+
+  # data/Payloads.csv (Kaggle — saurabhshahane)
+  # Raw Class column values → canonical label.
+  # "Malicious" assigned xss: all payloads are XSS strings embedded in full URLs.
+  payloads_csv:
+    Benign: benign
+    Malicious: xss
+
+  # data/XSS_dataset.csv (Kaggle — syedsaqlainhussain)
+  # Raw Label column values (integer strings) → canonical label.
+  xss_dataset:
+    "0": benign
+    "1": xss
+
+  # data/command injection.csv (Kaggle — sanketpawase)
+  # Raw Label column values (integer strings) → canonical label.
+  command_injection:
+    "0": benign
+    "1": cmdi
+
+  # training/data_clean/synthetic_nav.jsonl
+  # Synthetic clean navigation traffic (GET/POST to plain app routes, no
+  # query/body attack payloads) generated to replace the corrupt nav-only
+  # slice removed from payloads_csv. Raw label field is already "benign".
+  synthetic_nav:
+    benign: benign
+
+  # training/data_clean/synthetic_multifield.jsonl
+  # Synthetic multi-field form bodies (attack payload in one field,
+  # benign values in the others) generated so the model sees the shape
+  # per-field body analysis (Approach B) is designed to detect. Raw
+  # label field is already canonical (xss/sqli/cmdi).
+  synthetic_multifield:
+    xss: xss
+    sqli: sqli
+    cmdi: cmdi
+
+  # training/data_clean/synthetic_evasion.jsonl
+  # Synthetic double-HTML-entity, JS unicode-escape (\uXXXX), and
+  # double-percent-encoded XSS payloads, generated because the real corpus
+  # had 0/7/32 examples of these three evasion patterns respectively —
+  # insufficient to validate a recursive-decode fix. Staged ahead of that
+  # follow-up (not consumed by any extractor/decode logic yet). Raw label
+  # field is already canonical ("xss").
+  synthetic_evasion:
+    xss: xss
+
+  # training/data_clean/seclists_cmdi.jsonl
+  # SecLists' Fuzzing/command-injection-commix.txt (Commix's own generated
+  # fuzzing payload set). Deduplicated to one representative per structural
+  # template (canary/number-stripped) — see training/parsers/parse_seclists_cmdi.py.
+  # Raw label field is already canonical ("cmdi").
+  seclists_cmdi:
+    cmdi: cmdi
+
+  # training/data_clean/patt_cmdi_curated.jsonl
+  # 21 hand-curated command injection payloads from PayloadsAllTheThings'
+  # Command Injection page, covering encoding-bypass and quote-splitting
+  # evasion techniques not present in the SecLists set. See
+  # training/parsers/parse_patt_cmdi_curated.py for the curation rationale.
+  # Raw label field is already canonical ("cmdi").
+  patt_cmdi_curated:
+    cmdi: cmdi
+
+  # training/data_clean/synthetic_cmdi_minimal_context.jsonl
+  # Synthetic minimal-context (no UA/cookie/referer) cmdi examples,
+  # targeting recon-payload confidence gap. See parallel investigation.
+  synthetic_cmdi_minimal_context:
+    cmdi: cmdi

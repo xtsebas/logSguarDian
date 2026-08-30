@@ -1,2 +1,24 @@
 packages:
   - "packages/*"
+allowBuilds:
+  better-sqlite3: true
+  onnxruntime-node: true
+# hoisted (not the pnpm default "isolated"): required for packages/core's
+# bundledDependencies (@logsguardian/extractor is never published to npm on
+# its own — see packages/core/package.json — so it must ship physically
+# inside logsguardian's own tarball at publish time, which pnpm can only do
+# with a real node_modules layout, not its default content-addressable
+# store + symlinks).
+nodeLinker: hoisted
+# `allowBuilds` (the key this replaced) isn't a real pnpm-workspace.yaml field
+# in pnpm 10 - it was silently a no-op, papered over by both native modules'
+# binaries already being present in the local pnpm store from an earlier
+# install. Surfaced by today's reinstall ("Ignored build scripts:
+# better-sqlite3, onnxruntime-node" + "Run pnpm approve-builds"). This is the
+# actual documented mechanism (pnpm 9.4+): without it, a genuinely fresh
+# clone's `pnpm install` would skip these two packages' postinstall/build
+# scripts and leave better-sqlite3 uncompiled / onnxruntime-node without its
+# platform binary selected.
+onlyBuiltDependencies:
+  - better-sqlite3
+  - onnxruntime-node
