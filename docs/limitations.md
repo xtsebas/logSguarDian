@@ -264,20 +264,61 @@ increasing shingle size (k=2→4) only mildly reduced the match rate
 real duplication rather than a coincidental short-shingle match. CAPEC's
 template-based payload generation is the primary source.
 
-**Not measured: `sqli` (60% of the corpus) and `benign`.** The `sqli`
-class did not complete a full-corpus scan in reasonable time (killed
-after 1h47m of degrading throughput) despite completing the smaller
-classes in seconds. Subset-scaling diagnostics on `sqli` itself
-(n=5,000/20,000/50,000) showed query time growing faster than the row
-count between the two largest subsets tested (2.5x rows → ~4x query time)
-and average-neighbors-per-item still climbing at the largest subset
-tested (211 → 260 → 342, not yet plateaued) — consistent with `sqli`
-being at least as saturated as the three completed classes, likely more
-so (matching an earlier finding of 40,310 pairs in just a 10,000-row
-`sqli` sample at threshold=0.9). Getting a reliable full-corpus number for
-`sqli`/`benign` requires dedicated LSH engineering (explicit banding
-parameter tuning, chunked/streaming processing) not completed in this
-investigation.
+**Update: `sqli` and `benign` completed (previously not measured).**
+The `sqli` class originally did not complete a full-corpus scan in
+reasonable time (killed after 1h47m of degrading throughput) despite
+the three classes above completing in seconds, with subset-scaling
+diagnostics showing query time growing faster than row count and
+average-neighbors-per-item still climbing at 50,000 rows.
+
+Getting reliable numbers required tuning LSH banding explicitly rather
+than relying on datasketch's threshold-derived default. At
+`threshold=0.70, num_perm=128`, datasketch derives `b=14, r=9`
+(`b*r=126`) — too few, too-large bands for a corpus this saturated;
+each band's hash bucket grows large enough that per-query bucket scan
+cost dominates. Explicit coarser banding, `num_perm=128,
+params=(8,16)`, trades recall (50%-recall point shifts from
+s≈0.72 to s≈0.86 on the standard LSH S-curve
+`P(s)=1-(1-s^r)^b`) for tractability. On a 50,000-row subset this cut
+average query cost roughly 5x versus the default banding.
+
+Re-running full-corpus with `(8,16)` on the corrected `deriveRawPayload`
+field (via the actual compiled extractor, not a proxy) produced:
+
+| Class | n | Direct pairs | avg neighbors/item | max neighbors | Saturation (pairs/n) |
+|-------|--:|--------------:|--------------------:|---------------:|----------------------:|
+| sqli | 227,344 | 89,892,617 | 790.8 | 7,956 | ~395x |
+| benign | 99,112 | 943,147 | 19.0 | 876 | ~9.5x |
+
+sqli shows dramatically higher saturation than any previously-measured
+class (30–120x for xss/cmdi/path_traversal) — consistent with sqli's
+corpus being dominated by sqlmap/CAPEC template generation (a small
+number of giant near-duplicate families). benign shows the lowest
+saturation of any class measured (~9.5x), consistent with genuine,
+long-tail real traffic rather than templated content.
+
+**Timing caveat — the pair/neighbor counts are order-independent, the
+completion time is not.** A shuffled-order rerun (same config, same
+field, different random seed) reproduced the pair counts closely
+(avg_neighbors 790.0 vs 790.8, max_neighbors identical at 7,956 — a
+partial run at 81% of rows already matched the full run's steady-state
+numbers), confirming the counts above are real properties of the data,
+not artifacts of row order in `unified.jsonl`. But the shuffled run's
+*wall-clock* did not fit the same 20-minute budget the original run
+did — it hit the query-time cap at 1200s having processed only 185,129
+of 227,344 rows, versus the original's 482s to completion. Per-chunk
+query cost escalated faster under the shuffle (50k:40s → 100k:282s →
+150k:722s) than under original file order (150k:192s → 200k:481s).
+This rules out "CAPEC template variants happen to be clustered
+together in file order" as the explanation for the back-loading — it's
+a genuine property of the saturation (bucket sizes compound as more
+of a saturated corpus gets indexed, regardless of which specific rows
+land late), not a source-ordering artifact. It does mean `(8,16)` at
+sqli's current row count is **not** a comfortably-under-budget
+configuration for repeat runs — treat 482s as a lucky ordering rather
+than a guaranteed bound, and budget accordingly (or use the faster,
+lossier `(4,32)` fallback validated on the proxy dataset earlier in
+this investigation) for any automated rerun.
 
 **Decision: flag-only, do not deduplicate, for the v9 batch.** Two
 reasons, not just consistency with the existing policy:
@@ -285,21 +326,22 @@ reasons, not just consistency with the existing policy:
    corpus-reshaping decision that changes class balance and training
    volume — its own retraining-strategy decision, not something to bundle
    into a batch alongside unrelated feature/threshold changes.
-2. We do not have complete, reliable duplication numbers for `sqli`
-   (60% of the corpus) or `benign`. Deciding how aggressively to
-   deduplicate without knowing the true scale for the majority of the
-   corpus would be worse than deferring the decision entirely.
+2. This decision is now made with complete rather than partial
+   duplication numbers — sqli (60% of the corpus) and benign are no
+   longer unmeasured. That doesn't change the "flag, don't delete"
+   posture (reason 1 alone is sufficient), but it does mean the
+   posture is no longer a hedge against missing majority-of-corpus
+   data.
 
 This investigation **extends** the original limitation rather than
 closing it: the true scale of near-duplication is now quantified and
-confirmed genuine for 3/5 classes (30–120x saturation — dramatically
-larger than the old method's 211 total flagged pairs, which suffered from
-both the 100-char cutoff and the 10,000-pair cap), the transitive-chaining
-false lead has been ruled out, and a real, independent bug
-(`deriveRawPayload`'s field-priority bypass) was found and fixed as a
-byproduct. Remediation — whether and how to actually deduplicate,
-and the LSH engineering needed to get reliable numbers for `sqli`/
-`benign` — remains future work, tracked here rather than in
+confirmed genuine for all 5/5 classes (9.5x–395x saturation —
+dramatically larger than the old method's 211 total flagged pairs,
+which suffered from both the 100-char cutoff and the 10,000-pair cap),
+the transitive-chaining false lead has been ruled out, and a real,
+independent bug (`deriveRawPayload`'s field-priority bypass) was found
+and fixed as a byproduct. Remediation — whether and how to actually
+deduplicate — remains future work, tracked here rather than in
 `training/DEDUP_METHODOLOGY.md` (that file describes the superseded
 Levenshtein methodology only).
 
