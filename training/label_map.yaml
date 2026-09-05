@@ -144,3 +144,25 @@ mappings:
   # targeting recon-payload confidence gap. See parallel investigation.
   synthetic_cmdi_minimal_context:
     cmdi: cmdi
+
+  # training/data_clean/synthetic_cmdi_windows.jsonl
+  # Synthetic Windows-style cmdi examples (powershell -enc/IEX, certutil,
+  # wmic, net user/localgroup, reg add, schtasks, rundll32, mshta,
+  # bitsadmin), targeting the near-zero Windows-shaped share of the cmdi
+  # corpus. Nonce-based dedup, same playbook as synthetic_cmdi_minimal_context.
+  synthetic_cmdi_windows:
+    cmdi: cmdi
+
+  # training/data_clean/synthetic_cmdi_compound.jsonl
+  # Synthetic compound-command cmdi examples (2-4 chained recon/exfil/
+  # persistence steps, varied separators, ~30% non-path-touching), targeting
+  # the compound-command gap where path-indicator features previously
+  # outweighed shell-command signal and payloads misclassified as
+  # path_traversal. Generated with the compound string percent-encoded into
+  # a single form field (extractBestPayload splits raw bodies on literal
+  # &/&& as field boundaries, which would otherwise shatter the chain).
+  # Deliberately avoids uname/hostname/printenv/tar/scp/crontab/useradd/
+  # ssh-keygen/base64/openssl — held out for generalization testing, since
+  # none of them are in SHELL_COMMAND_COUNT's vocabulary. Nonce-based dedup.
+  synthetic_cmdi_compound:
+    cmdi: cmdi

@@ -39,7 +39,7 @@ export interface MiddlewareOptions {
   modelDir?: string;
   /** HTTP(S) URL to POST a JSON DetectionEvent when verdict is 'block' or 'pass_anomaly'. */
   webhookUrl?: string;
-  /** Opt-in: HTTP(S) URL of an MLOps telemetry collector. When set, every request's 73-feature vector is POSTed fire-and-forget (never the raw payload). Default: unset (disabled). */
+  /** Opt-in: HTTP(S) URL of an MLOps telemetry collector. When set, every request's 75-feature vector is POSTed fire-and-forget (never the raw payload). Default: unset (disabled). */
   telemetryUrl?: string;
   /** Identifier for this host in telemetry events, so a central collector can distinguish multiple deployments. Default: os.hostname(). */
   sourceId?: string;
@@ -79,7 +79,7 @@ export interface WorkerRequest {
 }
 
 /** Which model a worker in the pool is dedicated to. "canary" is an RF-shaped
- * candidate model evaluated in shadow (Fase 7) — same 67-feature input/output
+ * candidate model evaluated in shadow (Fase 7) — same 69-feature input/output
  * contract as "rf", never on the response critical path. */
 export type WorkerRole = "rf" | "if" | "canary";
 

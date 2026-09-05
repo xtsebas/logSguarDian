@@ -34,10 +34,10 @@ describe("ONNX parity — Node vs Python (F4.3)", () => {
     ifSession = await ort.InferenceSession.create(path.join(MODEL_DIR, "if.onnx"));
   });
 
-  test("parity_report.json reports parity_passed=true, rf_n_features=67, if_n_features=61", () => {
+  test("parity_report.json reports parity_passed=true, rf_n_features=69, if_n_features=63", () => {
     expect(parityReport.parity_passed).toBe(true);
-    expect(parityReport.rf_n_features).toBe(67);
-    expect(parityReport.if_n_features).toBe(61);
+    expect(parityReport.rf_n_features).toBe(69);
+    expect(parityReport.if_n_features).toBe(63);
   });
 
   test("RF: onnxruntime-node matches Python predict_proba within 1e-5", async () => {
@@ -95,6 +95,7 @@ describe("ONNX parity — Node vs Python (F4.3)", () => {
   });
 
   test("IF threshold is consistent with parity_report.threshold_if", () => {
-    expect(parityReport.threshold_if).toBeCloseTo(0.002486, 4);
+    // if_v10 (v11 retrain): recalibrated threshold, was 0.002486 for if_v9.
+    expect(parityReport.threshold_if).toBeCloseTo(0.008067, 4);
   });
 });

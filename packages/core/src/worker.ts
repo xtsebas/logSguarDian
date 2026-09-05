@@ -10,20 +10,29 @@
  * worker_threads do). See docs/results.md for the concurrency investigation.
  *
  * Feature reduction (v8+): RF and IF use different slices of the same
- * 73-feature vector.
- *   - RF gets 67 features: the 73-feature vector from @logsguardian/extractor
+ * 75-feature vector.
+ *   - RF gets 69 features: the 75-feature vector from @logsguardian/extractor
  *     minus the 6 runtime-behavioral features (status_code, req_count_*,
  *     error_rate_4xx_60s, endpoint_diversity_60s), unavailable at request
  *     interception time.
- *   - IF gets 61 features: RF's 67 minus 6 further features confirmed to
+ *   - IF gets 63 features: RF's 69 minus 6 further features confirmed to
  *     have zero/near-zero variance on benign traffic (dotdot_encoded_count,
  *     authorization_length, unusual_headers_count, null_byte_count,
  *     os_path_indicator, sensitive_file_target) — dead weight for anomaly
  *     detection, dropped to stabilize IsolationForest's run-to-run variance.
  * Both reductions are by feature name, not index. See docs/decision-policy.md §4.
  *
+ * NOTE (v11): the extractor grew from 73 to 75 features (distinct_shell_
+ * command_count, shell_to_path_ratio — compound-cmdi fix). Every count below
+ * (75/69/63) is derived from FEATURE_NAMES.length and the two exclusion sets
+ * at load time, but the assertions and literal tensor-shape dims below are
+ * still hardcoded per model version by design (fail loudly, not silently, if
+ * extractor and model shape ever drift again — this is the exact failure
+ * mode from the v8/v9 merge-conflict incident: update these three numbers
+ * together whenever FEATURE_NAMES or either exclusion set changes).
+ *
  * Feature extraction runs redundantly in each worker (both RF and IF workers
- * extract the full 73-dim vector independently from the same canonical
+ * extract the full 75-dim vector independently from the same canonical
  * request) rather than extracting once and shipping the vector across an
  * extra hop — extraction costs ~0.04ms, negligible next to the concurrency
  * problem this architecture fixes, and it keeps the message contract simple.
@@ -63,23 +72,23 @@ const IF_ADDITIONAL_EXCLUDED = new Set([
   "sensitive_file_target",
 ]);
 
-/** Positions in FEATURE_NAMES that rf.onnx expects (0-based, length=67). */
+/** Positions in FEATURE_NAMES that rf.onnx expects (0-based, length=69). */
 const RF_MODEL_INDICES: number[] = FEATURE_NAMES
   .map((name, i) => ({ name, i }))
   .filter(({ name }) => !EXCLUDED_NAMES.has(name))
   .map(({ i }) => i);
 
-/** Positions in FEATURE_NAMES that if.onnx expects (0-based, length=61). */
+/** Positions in FEATURE_NAMES that if.onnx expects (0-based, length=63). */
 const IF_MODEL_INDICES: number[] = FEATURE_NAMES
   .map((name, i) => ({ name, i }))
   .filter(({ name }) => !EXCLUDED_NAMES.has(name) && !IF_ADDITIONAL_EXCLUDED.has(name))
   .map(({ i }) => i);
 
-if (RF_MODEL_INDICES.length !== 67) {
-  throw new Error(`Expected 67 RF model feature indices, got ${RF_MODEL_INDICES.length}`);
+if (RF_MODEL_INDICES.length !== 69) {
+  throw new Error(`Expected 69 RF model feature indices, got ${RF_MODEL_INDICES.length}`);
 }
-if (IF_MODEL_INDICES.length !== 61) {
-  throw new Error(`Expected 61 IF model feature indices, got ${IF_MODEL_INDICES.length}`);
+if (IF_MODEL_INDICES.length !== 63) {
+  throw new Error(`Expected 63 IF model feature indices, got ${IF_MODEL_INDICES.length}`);
 }
 
 const { role, modelDir, modelFile: modelFileOverride } = workerData as {
@@ -134,16 +143,16 @@ parentPort!.on("message", async (msg: WorkerRequest) => {
   }
 
   try {
-    const vector73 = extractFeatureVector(msg.canonical);
+    const vector75 = extractFeatureVector(msg.canonical);
     const tRunStart = DEBUG ? process.hrtime.bigint() : undefined;
 
     if (role === "rf" || role === "canary") {
-      // Canary (Fase 7) is an RF-shaped candidate model — identical 67-feature
+      // Canary (Fase 7) is an RF-shaped candidate model — identical 69-feature
       // input contract and output convention as production RF, just tagged
       // with its own role so the middleware never confuses a shadow reply
       // for a production one.
-      const rfInput = Float32Array.from(RF_MODEL_INDICES.map((i) => vector73[i]));
-      const rfTensor = new ort.Tensor("float32", rfInput, [1, 67]);
+      const rfInput = Float32Array.from(RF_MODEL_INDICES.map((i) => vector75[i]));
+      const rfTensor = new ort.Tensor("float32", rfInput, [1, 69]);
       const rfResult = await session.run({ float_input: rfTensor });
       const rfProbs = Array.from(
         rfResult[session.outputNames[RF_OUTPUT_IDX]].data as Float32Array
@@ -162,8 +171,8 @@ parentPort!.on("message", async (msg: WorkerRequest) => {
         : { id: msg.id, role: "canary", rfProbs };
       parentPort!.postMessage(reply);
     } else {
-      const ifInput = Float32Array.from(IF_MODEL_INDICES.map((i) => vector73[i]));
-      const ifTensor = new ort.Tensor("float32", ifInput, [1, 61]);
+      const ifInput = Float32Array.from(IF_MODEL_INDICES.map((i) => vector75[i]));
+      const ifTensor = new ort.Tensor("float32", ifInput, [1, 63]);
       const ifResult = await session.run({ float_input: ifTensor });
       const ifScore = (
         ifResult[session.outputNames[IF_OUTPUT_IDX]].data as Float32Array

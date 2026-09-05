@@ -3,7 +3,7 @@
  * produced by scripts/cluster_anomalies.py (Fase 3).
  *
  * Output schema note: telemetry events never carry the raw request text (by
- * Fase 1 design — only the 73-feature vector is ever sent to the collector),
+ * Fase 1 design — only the 75-feature vector is ever sent to the collector),
  * so the curated file this writes is feature-space, not the raw-request
  * canonical JSONL that unify.py normally consumes. It matches the columns
  * training/split.py reads from features.parquet directly (FEATURE_NAMES +

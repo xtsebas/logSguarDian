@@ -264,20 +264,61 @@ increasing shingle size (k=2→4) only mildly reduced the match rate
 real duplication rather than a coincidental short-shingle match. CAPEC's
 template-based payload generation is the primary source.
 
-**Not measured: `sqli` (60% of the corpus) and `benign`.** The `sqli`
-class did not complete a full-corpus scan in reasonable time (killed
-after 1h47m of degrading throughput) despite completing the smaller
-classes in seconds. Subset-scaling diagnostics on `sqli` itself
-(n=5,000/20,000/50,000) showed query time growing faster than the row
-count between the two largest subsets tested (2.5x rows → ~4x query time)
-and average-neighbors-per-item still climbing at the largest subset
-tested (211 → 260 → 342, not yet plateaued) — consistent with `sqli`
-being at least as saturated as the three completed classes, likely more
-so (matching an earlier finding of 40,310 pairs in just a 10,000-row
-`sqli` sample at threshold=0.9). Getting a reliable full-corpus number for
-`sqli`/`benign` requires dedicated LSH engineering (explicit banding
-parameter tuning, chunked/streaming processing) not completed in this
-investigation.
+**Update: `sqli` and `benign` completed (previously not measured).**
+The `sqli` class originally did not complete a full-corpus scan in
+reasonable time (killed after 1h47m of degrading throughput) despite
+the three classes above completing in seconds, with subset-scaling
+diagnostics showing query time growing faster than row count and
+average-neighbors-per-item still climbing at 50,000 rows.
+
+Getting reliable numbers required tuning LSH banding explicitly rather
+than relying on datasketch's threshold-derived default. At
+`threshold=0.70, num_perm=128`, datasketch derives `b=14, r=9`
+(`b*r=126`) — too few, too-large bands for a corpus this saturated;
+each band's hash bucket grows large enough that per-query bucket scan
+cost dominates. Explicit coarser banding, `num_perm=128,
+params=(8,16)`, trades recall (50%-recall point shifts from
+s≈0.72 to s≈0.86 on the standard LSH S-curve
+`P(s)=1-(1-s^r)^b`) for tractability. On a 50,000-row subset this cut
+average query cost roughly 5x versus the default banding.
+
+Re-running full-corpus with `(8,16)` on the corrected `deriveRawPayload`
+field (via the actual compiled extractor, not a proxy) produced:
+
+| Class | n | Direct pairs | avg neighbors/item | max neighbors | Saturation (pairs/n) |
+|-------|--:|--------------:|--------------------:|---------------:|----------------------:|
+| sqli | 227,344 | 89,892,617 | 790.8 | 7,956 | ~395x |
+| benign | 99,112 | 943,147 | 19.0 | 876 | ~9.5x |
+
+sqli shows dramatically higher saturation than any previously-measured
+class (30–120x for xss/cmdi/path_traversal) — consistent with sqli's
+corpus being dominated by sqlmap/CAPEC template generation (a small
+number of giant near-duplicate families). benign shows the lowest
+saturation of any class measured (~9.5x), consistent with genuine,
+long-tail real traffic rather than templated content.
+
+**Timing caveat — the pair/neighbor counts are order-independent, the
+completion time is not.** A shuffled-order rerun (same config, same
+field, different random seed) reproduced the pair counts closely
+(avg_neighbors 790.0 vs 790.8, max_neighbors identical at 7,956 — a
+partial run at 81% of rows already matched the full run's steady-state
+numbers), confirming the counts above are real properties of the data,
+not artifacts of row order in `unified.jsonl`. But the shuffled run's
+*wall-clock* did not fit the same 20-minute budget the original run
+did — it hit the query-time cap at 1200s having processed only 185,129
+of 227,344 rows, versus the original's 482s to completion. Per-chunk
+query cost escalated faster under the shuffle (50k:40s → 100k:282s →
+150k:722s) than under original file order (150k:192s → 200k:481s).
+This rules out "CAPEC template variants happen to be clustered
+together in file order" as the explanation for the back-loading — it's
+a genuine property of the saturation (bucket sizes compound as more
+of a saturated corpus gets indexed, regardless of which specific rows
+land late), not a source-ordering artifact. It does mean `(8,16)` at
+sqli's current row count is **not** a comfortably-under-budget
+configuration for repeat runs — treat 482s as a lucky ordering rather
+than a guaranteed bound, and budget accordingly (or use the faster,
+lossier `(4,32)` fallback validated on the proxy dataset earlier in
+this investigation) for any automated rerun.
 
 **Decision: flag-only, do not deduplicate, for the v9 batch.** Two
 reasons, not just consistency with the existing policy:
@@ -285,21 +326,22 @@ reasons, not just consistency with the existing policy:
    corpus-reshaping decision that changes class balance and training
    volume — its own retraining-strategy decision, not something to bundle
    into a batch alongside unrelated feature/threshold changes.
-2. We do not have complete, reliable duplication numbers for `sqli`
-   (60% of the corpus) or `benign`. Deciding how aggressively to
-   deduplicate without knowing the true scale for the majority of the
-   corpus would be worse than deferring the decision entirely.
+2. This decision is now made with complete rather than partial
+   duplication numbers — sqli (60% of the corpus) and benign are no
+   longer unmeasured. That doesn't change the "flag, don't delete"
+   posture (reason 1 alone is sufficient), but it does mean the
+   posture is no longer a hedge against missing majority-of-corpus
+   data.
 
 This investigation **extends** the original limitation rather than
 closing it: the true scale of near-duplication is now quantified and
-confirmed genuine for 3/5 classes (30–120x saturation — dramatically
-larger than the old method's 211 total flagged pairs, which suffered from
-both the 100-char cutoff and the 10,000-pair cap), the transitive-chaining
-false lead has been ruled out, and a real, independent bug
-(`deriveRawPayload`'s field-priority bypass) was found and fixed as a
-byproduct. Remediation — whether and how to actually deduplicate,
-and the LSH engineering needed to get reliable numbers for `sqli`/
-`benign` — remains future work, tracked here rather than in
+confirmed genuine for all 5/5 classes (9.5x–395x saturation —
+dramatically larger than the old method's 211 total flagged pairs,
+which suffered from both the 100-char cutoff and the 10,000-pair cap),
+the transitive-chaining false lead has been ruled out, and a real,
+independent bug (`deriveRawPayload`'s field-priority bypass) was found
+and fixed as a byproduct. Remediation — whether and how to actually
+deduplicate — remains future work, tracked here rather than in
 `training/DEDUP_METHODOLOGY.md` (that file describes the superseded
 Levenshtein methodology only).
 
@@ -457,6 +499,68 @@ context loses a confidence contribution the model implicitly relies on,
 even when the injection signal itself (`semicolon_count`,
 `shell_command_count`) is present and correctly extracted.
 
+### 8.1 Windows-syntax and compound-command coverage (v11) — BOTH RESOLVED, two different mechanisms
+
+A follow-up investigation checked whether the same corpus had comparable
+gaps for (a) Windows-style cmdi syntax (`powershell`, `certutil`, `net
+user`, etc.) and (b) compound commands chaining 2+ operations. Both were
+confirmed real and scoped precisely before any fix:
+
+- Windows-shaped payloads were 0.17% of the cmdi corpus (15/8,858 rows).
+  `SHELL_COMMAND_COUNT` already recognized `powershell`/`cmd.exe` but
+  nothing else Windows-specific — a genuine feature-vocabulary gap, not
+  just a data-volume one.
+- Compound payloads (2+ chained operations) were 2.9% of the cmdi corpus.
+  Unlike §8 above, **richer request context did not help**: live inference
+  with a real browser UA and cookie still misclassified 3/4 hand-built
+  compound payloads as `path_traversal`, because path-indicator features
+  (`traversal_sequence_count`, `path_separator_count`) outweighed
+  shell-command signal whenever a chain touched `/etc/passwd`-style paths.
+  This confirmed a genuinely different mechanism from §8's context-richness
+  effect — data alone (verified via an ephemeral no-new-feature experiment)
+  wasn't a clean fix either, so this needed new features, not just more
+  examples.
+
+**Fix (v11 retrain):**
+1. `SHELL_COMMAND_COUNT` extended with `certutil`, `wmic`, `reg
+   add/query/delete`, `net user/localgroup`, `schtasks`, `rundll32`,
+   `mshta`, `bitsadmin`, `Invoke-*`, `-enc`/`-EncodedCommand` (0%
+   false-positive rate verified against 99k benign corpus rows).
+2. Two new additive features — `distinct_shell_command_count` (unique
+   recognized binaries, not raw match count) and `shell_to_path_ratio`
+   (distinct commands ÷ path-token count) — give the RF a direct signal
+   that survives even when a chain touches sensitive paths. Feature vector
+   grew 73 → 75 dimensions.
+3. 400 synthetic Windows-cmdi rows + 500 synthetic compound-command rows
+   added to the training corpus (nonce-deduplicated, held-out command
+   tokens reserved for generalization testing — see below).
+
+**Result (production hyperparameters, not a mini-pipeline approximation):**
+cmdi went from being missed entirely on Windows/compound payloads to
+precision 0.927 / recall 0.950 / F1 0.938 on the held-out **test** set (R2),
+with `path_traversal` unchanged at 0.982/0.983 — no regression from the new
+ratio feature. All 5 §8 minimal-context payloads (`whoami`, `id`, `uname
+-a`, `printenv`, `` `last` ``) still classify `cmdi` at 1.0 confidence, so
+this fix does not reopen §8.
+
+Generalization was checked on tokens never used during training or present
+in `SHELL_COMMAND_COUNT`'s vocabulary: Windows (`sc create`, `wevtutil cl`,
+`vssadmin delete shadows`) and compound-chain commands (`uname`,
+`hostname`, `tar`, `scp`, `crontab`, `useradd`, `ssh-keygen`, `base64`,
+`openssl`, recombined into chains not seen in training) — all classified
+`cmdi` at 0.57–0.83 confidence, clear of the 0.35 threshold. This is
+structural generalization via separator/subshell/redirect signal, not
+memorization of specific binaries.
+
+**One related bug found but not fixed here (out of scope for this
+change):** `SHELL_COMMAND_COUNT`'s `\b` word-boundary anchor cannot match
+immediately before `/etc/passwd` or `/bin/` when either is preceded by
+whitespace (both sides of the boundary are non-word characters in that
+case) — so those two path-literal alternatives are effectively dead code
+in realistic payloads like `cat /etc/passwd` (space before `/`). Worth a
+follow-up ticket; doesn't affect this fix's validity since the recognized
+binary names (`cat`, `rm`, `curl`, etc.) still match normally.
+
 ## 9. IF (IsolationForest) verdict inclusion under concurrency — RESOLVED (grace window superseded by async log-patch)
 
 **Status: fixed at the architecture level** (`docs/results.md` §A24 has the
@@ -564,3 +668,48 @@ matching production reality, or (b) removing IF's dependency on
 features that carry this tension (UA-related features) entirely,
 forcing it to calibrate on axes that attacks and benign traffic
 genuinely don't share.
+
+### Update: option (b) tested and rejected
+
+Removing IF's access to UA-related features entirely
+(ua_present, ua_length, ua_suspicious — the full Group 8 UA
+set, 1.90% of IF's total split frequency) was tested as an
+alternative to the data-augmentation attempts above. Same
+retrain recipe as if_v10 (contamination=0.05, n_estimators=200,
+max_samples=4096), UA features dropped from the 63-feature
+input entirely.
+
+**Result: worse than either data-augmentation attempt, not a
+different tradeoff.**
+
+| Config | Recall (agg) | FP | cmdi | path_traversal | sqli | xss |
+|--------|-------------:|----:|-----:|----------------:|-----:|----:|
+| Current (with UA) | 0.9157 | 0.0595 | 0.9624 | 0.9980 | 0.8989 | 0.9819 |
+| UA features removed | 0.4946 | 0.0591 | 0.7505 | 0.7857 | 0.4315 | 0.7269 |
+
+Aggregate recall dropped 42.1pp — sqli hit hardest at -45.7pp.
+This far exceeds the -11.7pp ceiling that ruled out the
+synthetic-data approach. UA features carry real, non-redundant
+discriminative signal for sqli/xss/path_traversal specifically
+(not just a proxy for "looks like a browser") — despite their
+small (1.90%) aggregate split share, the splits they do provide
+are decisive at specific boundaries the other 60+ features
+don't cover.
+
+The single benign-request ablation case trivially "passes"
+with UA removed (IF literally cannot see the signal that
+caused the false anomaly) — but this is true by construction,
+not by improved calibration, and it comes at a recall cost an
+order of magnitude larger than the rejected data-augmentation
+attempts.
+
+**Conclusion: both proposed future-work directions from the
+original §10 investigation have now been tested and rejected.**
+The tension is more fundamental than either "add more realistic
+benign data" or "remove the feature causing the tension" can
+resolve — UA-related signal is genuinely load-bearing for IF's
+attack-class recall, not merely a spurious correlation that can
+be cleanly excised. The current calibration (accept the live
+pass_anomaly inflation as IF is non-blocking, log-enrichment
+only) remains the correct decision, now with both alternatives
+empirically closed rather than left as open future work.
